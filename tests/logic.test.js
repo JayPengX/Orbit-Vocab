@@ -202,7 +202,17 @@ test("rankEligibleForReintroduction ranks eligible Memorized words by predicted 
   assert.deepEqual(candidates.map((w) => w.word), ["risky", "borderline"], "only words at/above autoBalanceReintroduceMinRisk qualify, highest risk first");
 });
 
-test("computeReintroduceShare scales with total excess risk, not a flat percentage - more/riskier eligible words means a bigger share, capped at autoBalanceReintroduceMaxShare", () => {
+test("computeReintroduceShare is always exactly 0 while autoBalanceReintroduceMaxShare is 0 (reintroduction currently disabled), regardless of how much risk exists", () => {
+  assert.equal(L.CONFIG.autoBalanceReintroduceMaxShare, 0, "sanity check: reintroduction is currently switched off");
+  const manyPool = makePool(30, 4, "severe");
+  const models = { difficultyBaseline: { predict: () => 0.95 }, interferenceModel: null, responseTimeBaseline: null };
+  const historyStore = {};
+  for (const w of manyPool) historyStore[w.word.toLowerCase()] = L.createEmptyWordHistory(w.word, 4, w.word.length);
+  const scored = L.scoreMemorizedForReintroduction(manyPool, historyStore, models, Math.random);
+  assert.equal(L.computeReintroduceShare(scored), 0, "even a large, severely at-risk pool must reserve nothing while the feature is off");
+});
+
+test("computeReintroduceShare's underlying math scales with total excess risk, not a flat percentage, whenever autoBalanceReintroduceMaxShare is turned back on", () => {
   const baselineFor = (riskByWord) => ({ difficultyBaseline: { predict: (word) => riskByWord[word] ?? 0.05 }, interferenceModel: null, responseTimeBaseline: null });
   const historyStoreFor = (words) => {
     const store = {};
@@ -210,23 +220,29 @@ test("computeReintroduceShare scales with total excess risk, not a flat percenta
     return store;
   };
 
-  // One barely-qualifying word.
-  const onePool = [makeWord("barely", 4)];
-  const oneModels = baselineFor({ barely: L.CONFIG.autoBalanceReintroduceMinRisk + 0.02 });
-  const oneScore = L.scoreMemorizedForReintroduction(onePool, historyStoreFor(onePool), oneModels, Math.random);
-  const oneShare = L.computeReintroduceShare(oneScore);
-  assert.ok(oneShare > 0, "a single barely-qualifying word should still reserve SOME share");
-  assert.ok(oneShare < L.CONFIG.autoBalanceReintroduceMaxShare, "but nowhere near the ceiling");
+  const originalMaxShare = L.CONFIG.autoBalanceReintroduceMaxShare;
+  L.CONFIG.autoBalanceReintroduceMaxShare = 0.12;
+  try {
+    // One barely-qualifying word.
+    const onePool = [makeWord("barely", 4)];
+    const oneModels = baselineFor({ barely: L.CONFIG.autoBalanceReintroduceMinRisk + 0.02 });
+    const oneScore = L.scoreMemorizedForReintroduction(onePool, historyStoreFor(onePool), oneModels, Math.random);
+    const oneShare = L.computeReintroduceShare(oneScore);
+    assert.ok(oneShare > 0, "a single barely-qualifying word should still reserve SOME share");
+    assert.ok(oneShare < L.CONFIG.autoBalanceReintroduceMaxShare, "but nowhere near the ceiling");
 
-  // Many severely at-risk words - should saturate at (or very near) the ceiling.
-  const manyPool = makePool(30, 4, "severe");
-  const manyRisk = {};
-  for (const w of manyPool) manyRisk[w.word] = 0.95;
-  const manyModels = baselineFor(manyRisk);
-  const manyScore = L.scoreMemorizedForReintroduction(manyPool, historyStoreFor(manyPool), manyModels, Math.random);
-  const manyShare = L.computeReintroduceShare(manyScore);
-  assert.ok(manyShare > oneShare, "more/riskier eligible content should reserve a bigger share");
-  assert.ok(Math.abs(manyShare - L.CONFIG.autoBalanceReintroduceMaxShare) < 1e-9, "a large, severely at-risk pool should saturate at the ceiling, not exceed it");
+    // Many severely at-risk words - should saturate at (or very near) the ceiling.
+    const manyPool = makePool(30, 4, "severe");
+    const manyRisk = {};
+    for (const w of manyPool) manyRisk[w.word] = 0.95;
+    const manyModels = baselineFor(manyRisk);
+    const manyScore = L.scoreMemorizedForReintroduction(manyPool, historyStoreFor(manyPool), manyModels, Math.random);
+    const manyShare = L.computeReintroduceShare(manyScore);
+    assert.ok(manyShare > oneShare, "more/riskier eligible content should reserve a bigger share");
+    assert.ok(Math.abs(manyShare - L.CONFIG.autoBalanceReintroduceMaxShare) < 1e-9, "a large, severely at-risk pool should saturate at the ceiling, not exceed it");
+  } finally {
+    L.CONFIG.autoBalanceReintroduceMaxShare = originalMaxShare;
+  }
 });
 
 /* ================= Wrong-answer review data ================= */
@@ -360,20 +376,32 @@ test("computeSelectionWeight with category 'new' (or omitted) gives a higher-ris
   assert.ok(weightHardNew > weightEasyNew, "category 'new' should favor the harder (higher-risk) word");
 });
 
-test("computeSelectionWeight with category 'incorrect' or 'learning' gives a higher-risk word a LOWER weight - the opposite direction from 'new'", () => {
+test("computeSelectionWeight with category 'learning' gives a higher-risk word a LOWER weight - the opposite direction from 'new'", () => {
   const now = 1000000;
   const models = { difficultyBaseline: { predict: (word) => (word === "hard" ? 0.9 : 0.1) }, interferenceModel: null, responseTimeBaseline: null };
   const hard = { word: "hard", level: 4 };
   const easy = { word: "easy", level: 4 };
 
-  for (const category of ["incorrect", "learning"]) {
-    const weightHard = L.computeSelectionWeight(hard, null, models, now, category);
-    const weightEasy = L.computeSelectionWeight(easy, null, models, now, category);
-    assert.ok(
-      weightEasy > weightHard,
-      `category '${category}' should favor the EASIER (lower-risk) word, to clear it off the backlog first (easy=${weightEasy}, hard=${weightHard})`
-    );
-  }
+  const weightHard = L.computeSelectionWeight(hard, null, models, now, "learning");
+  const weightEasy = L.computeSelectionWeight(easy, null, models, now, "learning");
+  assert.ok(
+    weightEasy > weightHard,
+    `category 'learning' should favor the EASIER (lower-risk) word, to graduate it back to Memorized fastest (easy=${weightEasy}, hard=${weightHard})`
+  );
+});
+
+test("computeSelectionWeight with category 'incorrect' gives a higher-risk word a HIGHER weight - same direction as 'new', unlike 'learning' (an auto-mode round is the whole ranked backlog sliced by session time, so the words actually causing trouble must rank first or a large backlog's hard tail may never be reached)", () => {
+  const now = 1000000;
+  const models = { difficultyBaseline: { predict: (word) => (word === "hard" ? 0.9 : 0.1) }, interferenceModel: null, responseTimeBaseline: null };
+  const hard = { word: "hard", level: 4 };
+  const easy = { word: "easy", level: 4 };
+
+  const weightHard = L.computeSelectionWeight(hard, null, models, now, "incorrect");
+  const weightEasy = L.computeSelectionWeight(easy, null, models, now, "incorrect");
+  assert.ok(
+    weightHard > weightEasy,
+    `category 'incorrect' should favor the HARDER (higher-risk) word, so it isn't perpetually pushed to the back of a large backlog (easy=${weightEasy}, hard=${weightHard})`
+  );
 });
 
 test("computeSelectionWeight's category direction is purely about which way risk points - the response-time and recency adjustments still apply identically regardless of category", () => {
@@ -881,7 +909,36 @@ test("selectQuestions never includes a Memorized word by default - opts.reintrod
   assert.deepEqual(selection, [], "a Memorized word must not resurface without opting into reintroduction");
 });
 
-test("selectQuestions with opts.reintroduceMemorized carves Memorized words the prediction model rates at-risk into the round, alongside new words - a single barely-qualifying word is NOT guaranteed a slot (share is risk-driven, see computeReintroduceShare), but enough aggregate risk is", () => {
+test("selectQuestions with opts.reintroduceMemorized reintroduces nothing while autoBalanceReintroduceMaxShare is 0 (currently disabled)", () => {
+  const historyStore = {};
+  const riskyWords = [];
+  for (let i = 0; i < 6; i++) {
+    const word = "risky" + i;
+    riskyWords.push(makeWord(word, 4));
+    const h = L.createEmptyWordHistory(word, 4, word.length);
+    L.recordAttempt(h, { correct: true, timestamp: 1000 });
+    historyStore[word] = h;
+  }
+  const newWords = makePool(50, 4, "fresh");
+  const pool = riskyWords.concat(newWords);
+  const aiSignals = {};
+  for (const w of riskyWords) aiSignals[w.word] = { priorDifficulty: 1.0 };
+  const selection = L.selectQuestions({
+    pool: pool,
+    historyStore: historyStore,
+    size: 100,
+    ratio: { new: 1, incorrect: 0, learning: 0 },
+    aiSignals: aiSignals,
+    reintroduceMemorized: true,
+    random: seededRandom(7),
+  });
+  assert.ok(
+    !selection.some((w) => w.word.startsWith("risky")),
+    "no Memorized word should be reintroduced while the feature is switched off, no matter how at-risk it looks"
+  );
+});
+
+test("selectQuestions with opts.reintroduceMemorized carves Memorized words the prediction model rates at-risk into the round when autoBalanceReintroduceMaxShare is turned back on - a single barely-qualifying word is NOT guaranteed a slot (share is risk-driven, see computeReintroduceShare), but enough aggregate risk is", () => {
   const historyStore = {};
   const riskyWords = [];
   for (let i = 0; i < 6; i++) {
@@ -897,19 +954,26 @@ test("selectQuestions with opts.reintroduceMemorized carves Memorized words the 
   // AGGREGATE excess-risk pressure across all 6 to clear a real share.
   const aiSignals = {};
   for (const w of riskyWords) aiSignals[w.word] = { priorDifficulty: 1.0 };
-  const selection = L.selectQuestions({
-    pool: pool,
-    historyStore: historyStore,
-    size: 100,
-    ratio: { new: 1, incorrect: 0, learning: 0 },
-    aiSignals: aiSignals,
-    reintroduceMemorized: true,
-    random: seededRandom(7),
-  });
-  assert.ok(
-    selection.some((w) => w.word.startsWith("risky")),
-    "with enough aggregate risk in the Memorized pool, at least one at-risk word should be reintroduced even though the ratio itself is 100% new"
-  );
+
+  const originalMaxShare = L.CONFIG.autoBalanceReintroduceMaxShare;
+  L.CONFIG.autoBalanceReintroduceMaxShare = 0.12;
+  try {
+    const selection = L.selectQuestions({
+      pool: pool,
+      historyStore: historyStore,
+      size: 100,
+      ratio: { new: 1, incorrect: 0, learning: 0 },
+      aiSignals: aiSignals,
+      reintroduceMemorized: true,
+      random: seededRandom(7),
+    });
+    assert.ok(
+      selection.some((w) => w.word.startsWith("risky")),
+      "with enough aggregate risk in the Memorized pool, at least one at-risk word should be reintroduced even though the ratio itself is 100% new"
+    );
+  } finally {
+    L.CONFIG.autoBalanceReintroduceMaxShare = originalMaxShare;
+  }
 });
 
 test("selectQuestions returns an empty list (not an error) when every ratio slider is 0%", () => {

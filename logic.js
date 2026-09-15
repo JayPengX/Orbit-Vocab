@@ -256,8 +256,13 @@
     // The reintroduction share never exceeds this fraction of a round, no
     // matter how much at-risk Memorized content exists - reintroduction is
     // meant to be a light check on retention, not something that can crowd
-    // out the new/incorrect/learning split entirely.
-    autoBalanceReintroduceMaxShare: 0.12,
+    // out the new/incorrect/learning split entirely. Set to 0 (off) - a
+    // learner actively working through a large incorrect/learning backlog
+    // found it added noise to what should be a pure "drill what I'm
+    // actually getting wrong" session. computeReintroduceShare still scales
+    // with actual risk rather than a flat percentage if this is ever raised
+    // again.
+    autoBalanceReintroduceMaxShare: 0,
     // Upper bound on how many Memorized words get their risk computed and
     // ranked per round, applied BEFORE the eligibility/pressure math above -
     // protects against the cost of scoring every single Memorized word in a
@@ -1287,19 +1292,27 @@
   // full weightedShuffle weight - but which DIRECTION predicted difficulty
   // pulls the weight depends on `category`:
   //
-  //   - "new" (or omitted): higher predicted risk -> higher weight. A
-  //     never-seen word predicted hard is exactly the one worth spending a
-  //     new-word slot on now, while attention is being allocated anyway -
-  //     surfacing it early is more useful than a new word the learner would
-  //     likely have gotten right regardless.
-  //   - "incorrect"/"learning": LOWER predicted risk -> higher weight.
-  //     These words are already in the review backlog; the goal here is to
-  //     clear the ones closest to mastered off the list fastest (a correct
-  //     answer moves them toward Memorized, a word not shown doesn't), so
-  //     review slots preferentially go to backlog words most likely to be
-  //     answered right. This leaves the genuinely hard backlog words - the
-  //     ones that keep NOT clearing - relatively more prominent in what's
-  //     left, which is what the learner actually needs to focus on.
+  //   - "new"/"incorrect"/"reintroduce" (or omitted): higher predicted risk
+  //     -> higher weight. For "new", a never-seen word predicted hard is
+  //     exactly the one worth spending a new-word slot on now, while
+  //     attention is being allocated anyway. For "incorrect" (a word
+  //     that's currently wrong), the SAME direction means the words the
+  //     learner is most likely to keep getting wrong rank first - this
+  //     matters because an auto-mode round is the ENTIRE ranked backlog,
+  //     sliced by session TIME (see app.js's testMinutes), not a fixed
+  //     question count: an earlier version favored LOWER risk here (to
+  //     clear near-mastered words off the list fastest), which meant the
+  //     same easy front of a large backlog got seen every session while the
+  //     genuinely hard tail - sitting at the back of a list the session
+  //     never reaches the end of - could go unseen indefinitely. Ranking
+  //     hardest-first guarantees the words actually causing trouble are the
+  //     ones a time-boxed session actually reaches.
+  //   - "learning": LOWER predicted risk -> higher weight. A "learning"
+  //     word is already confirmed correct on its most recent try (see
+  //     classifyState) and just needs one more correct answer to graduate
+  //     back to Memorized - prioritizing the ones closest to that clears
+  //     them out fastest, the same reasoning "incorrect" used to use before
+  //     the round-is-the-whole-backlog problem above ruled it out there.
   //
   // Beyond that baseline pull, two multiplicative adjustments layer on top
   // exactly as they always have for review words - a slower-than-expected
@@ -1324,7 +1337,7 @@
   // regardless of how this weight alone would have ranked them.
   function computeSelectionWeight(w, history, models, now, category) {
     const risk = predictWordDifficulty(w.word, w.level, history, models.difficultyBaseline, models.interferenceModel, w.pos);
-    const effectiveRisk = category === "incorrect" || category === "learning" ? 1 - risk : risk;
+    const effectiveRisk = category === "learning" ? 1 - risk : risk;
     let weight = 0.5 + effectiveRisk * 2;
 
     const rel = relativeResponseTime(history, models.responseTimeBaseline);
