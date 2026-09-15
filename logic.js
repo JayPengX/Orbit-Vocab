@@ -625,35 +625,48 @@
   // the same estimate from whatever's available instead of silently
   // treating it as a neutral coin flip:
   //   1. masteryAlpha/masteryBeta already present - use them directly.
-  //   2. a recentAttempts ring buffer present - replay it (oldest to
-  //      newest) through the exact same decay recurrence recordAttempt
-  //      uses, from the same neutral prior, so recency still matters.
-  //   3. neither - fall back to a Laplace-smoothed lifetime ratio
-  //      (correct/attempts), which at least beats assuming 50/50 for data
-  //      that's known to be lopsided, even with no ordering information.
+  //   2. a recentAttempts ring buffer present - first credit whatever
+  //      lifetime evidence sits OUTSIDE that ring buffer (attempts beyond
+  //      what it still holds - see CONFIG.maxRecentAttempts - capped at one
+  //      more ring-buffer's-worth so ancient history can't dominate
+  //      forever), then replay the ring buffer itself (oldest to newest)
+  //      through the exact same decay recurrence recordAttempt uses, on TOP
+  //      of that base. Without the older-evidence credit, a word attempted
+  //      many more times than the ring buffer holds - memorized long ago,
+  //      rarely asked since - could have its ENTIRE established track
+  //      record discarded just because a single old miss happens to still
+  //      be sitting inside the last ~12 entries, which would wrongly demote
+  //      a well-known word back into "still learning" the moment this seeds
+  //      from old stored data.
+  //   3. no ring buffer at all - fall back to a Laplace-smoothed lifetime
+  //      ratio (correct/attempts), which at least beats assuming 50/50 for
+  //      data that's known to be lopsided, even with no ordering information.
   function computeWordMastery(history) {
     const h = history || {};
     if (typeof h.masteryAlpha === "number" && typeof h.masteryBeta === "number") {
       return { alpha: h.masteryAlpha, beta: h.masteryBeta };
     }
-    const recent = h.recentAttempts;
-    if (Array.isArray(recent) && recent.length) {
-      let alpha = CONFIG.masteryPriorAlpha;
-      let beta = CONFIG.masteryPriorBeta;
+    const recent = Array.isArray(h.recentAttempts) ? h.recentAttempts : [];
+    // Prefer an explicit `correct` count; fall back to deriving it from
+    // `incorrect` (the same convention computeDifficultyBaseline's own
+    // error-rate calc uses) for a partial fixture that only sets one of the
+    // two - a bare {attempts, incorrect} shouldn't silently read as "always
+    // wrong" just because `correct` was never spelled out.
+    const attempts = h.attempts || 0;
+    const correct = typeof h.correct === "number" ? h.correct : attempts - (h.incorrect || 0);
+    if (recent.length) {
+      const recentCorrect = recent.filter((a) => a.correct).length;
+      const olderAttempts = Math.min(CONFIG.maxRecentAttempts, Math.max(0, attempts - recent.length));
+      const olderRatio = olderAttempts ? clamp((correct - recentCorrect) / olderAttempts, 0, 1) : 0;
+      let alpha = CONFIG.masteryPriorAlpha + olderRatio * olderAttempts;
+      let beta = CONFIG.masteryPriorBeta + (1 - olderRatio) * olderAttempts;
       for (const a of recent) {
         alpha = alpha * CONFIG.masteryDecay + (a.correct ? 1 : 0);
         beta = beta * CONFIG.masteryDecay + (a.correct ? 0 : 1);
       }
       return { alpha: alpha, beta: beta };
     }
-    const attempts = h.attempts || 0;
     if (!attempts) return { alpha: CONFIG.masteryPriorAlpha, beta: CONFIG.masteryPriorBeta };
-    // Prefer an explicit `correct` count; fall back to deriving it from
-    // `incorrect` (the same convention computeDifficultyBaseline's own
-    // error-rate calc uses) for a partial fixture that only sets one of the
-    // two - a bare {attempts, incorrect} shouldn't silently read as "always
-    // wrong" just because `correct` was never spelled out.
-    const correct = typeof h.correct === "number" ? h.correct : attempts - (h.incorrect || 0);
     const ratio = clamp(correct / attempts, 0, 1);
     return {
       alpha: CONFIG.masteryPriorAlpha + ratio * attempts,

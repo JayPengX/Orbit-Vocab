@@ -1407,6 +1407,24 @@ test("computeWordMastery replays a recentAttempts ring buffer through the same d
   assert.ok(slippingMean < 0.5, `recently-slipping word should read as LOWER mastery than a flat 50% lifetime rate (got ${slippingMean})`);
 });
 
+test("computeWordMastery credits lifetime evidence OUTSIDE the ring buffer before replaying it, so a word attempted many more times than maxRecentAttempts holds doesn't get its whole established record wiped by one old miss still sitting in that window (regression: this used to demote long-memorized words back to 'learning' on migration)", () => {
+  // 15 lifetime attempts, 14 correct: 3 corrects aged out of the 12-slot
+  // ring buffer, then 1 wrong, then 11 more corrects - so the ring buffer
+  // (last 12) holds exactly 1 wrong + 11 correct, but the word's REAL
+  // record is 14/15 (93%), not the ~92% the ring buffer alone would show
+  // either - the point is the older 3 corrects must still count.
+  const recentAttempts = [{ correct: false }];
+  for (let i = 0; i < 11; i++) recentAttempts.push({ correct: true });
+  const staleImport = { attempts: 15, correct: 14, incorrect: 1, recentAttempts: recentAttempts, lastResult: "correct" };
+  assert.equal(L.classifyState(staleImport), "memorized", "a genuinely well-known word must not be demoted just because migration only has a capped ring buffer to replay");
+
+  // Sanity check the fix is actually doing something: crediting ZERO older
+  // evidence (the old, buggy behavior) on the exact same ring buffer alone
+  // would have understated it.
+  const ringBufferAlone = { recentAttempts: recentAttempts };
+  assert.ok(L.masteryMean(staleImport) > L.masteryMean(ringBufferAlone), "crediting the older evidence should read as more confident than the ring buffer alone");
+});
+
 test("classifyState: a word with a long, strong track record survives a single slip and returns to 'memorized' on the very next correct answer - not stuck needing a fresh 2-streak like a brand new word would", () => {
   const h = L.createEmptyWordHistory("steady", 4, 6);
   const results = [];
