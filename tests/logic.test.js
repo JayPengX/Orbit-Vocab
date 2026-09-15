@@ -176,9 +176,9 @@ test("rankEligibleForReintroduction returns nothing when the Memorized pool is e
   const models = L.buildPriorityModels({});
   assert.deepEqual(L.rankEligibleForReintroduction(L.scoreMemorizedForReintroduction([], {}, models, Math.random)), []);
 
-  // A pool of Memorized words that predictWordDifficulty has no reason to
-  // flag as risky (no baseline data, no interference, no own error history)
-  // - the neutral 0.15 cold-start guess is well under any sane minRisk.
+  // A pool of Memorized words with a single clean correct answer each - own
+  // decayed mastery (1.85/2.7 correct, risk ~0.31) sits comfortably under
+  // autoBalanceReintroduceMinRisk, so nothing here should qualify.
   const historyStore = {};
   const pool = makePool(10, 4, "safe");
   for (const w of pool) {
@@ -191,11 +191,18 @@ test("rankEligibleForReintroduction returns nothing when the Memorized pool is e
   assert.equal(L.computeReintroduceShare(scored), 0, "no share should be reserved when nothing qualifies");
 });
 
-test("rankEligibleForReintroduction ranks eligible Memorized words by predicted risk, highest first, and excludes ones below the minimum", () => {
-  const models = { difficultyBaseline: { predict: (word) => (word === "risky" ? 0.9 : word === "borderline" ? 0.5 : 0.05) }, interferenceModel: null, responseTimeBaseline: null };
+test("rankEligibleForReintroduction ranks eligible Memorized words by OWN decayed mastery risk, highest first, and excludes ones below the minimum", () => {
+  const models = L.buildPriorityModels({});
   const pool = [makeWord("risky", 4), makeWord("borderline", 4), makeWord("safe", 4)];
+  // Risk is 1 - masteryMean, driven purely by each word's own masteryAlpha/
+  // masteryBeta - not any generic baseline (there is none configured here).
+  const mastery = { risky: { masteryAlpha: 1, masteryBeta: 9 }, borderline: { masteryAlpha: 6, masteryBeta: 4 }, safe: { masteryAlpha: 19, masteryBeta: 1 } };
   const historyStore = {};
-  for (const w of pool) historyStore[w.word.toLowerCase()] = L.createEmptyWordHistory(w.word, 4, w.word.length);
+  for (const w of pool) {
+    const h = L.createEmptyWordHistory(w.word, 4, w.word.length);
+    Object.assign(h, mastery[w.word]);
+    historyStore[w.word.toLowerCase()] = h;
+  }
 
   const scored = L.scoreMemorizedForReintroduction(pool, historyStore, models, Math.random);
   const candidates = L.rankEligibleForReintroduction(scored);
@@ -205,28 +212,41 @@ test("rankEligibleForReintroduction ranks eligible Memorized words by predicted 
 test("computeReintroduceShare is always exactly 0 while autoBalanceReintroduceMaxShare is 0 (reintroduction currently disabled), regardless of how much risk exists", () => {
   assert.equal(L.CONFIG.autoBalanceReintroduceMaxShare, 0, "sanity check: reintroduction is currently switched off");
   const manyPool = makePool(30, 4, "severe");
-  const models = { difficultyBaseline: { predict: () => 0.95 }, interferenceModel: null, responseTimeBaseline: null };
+  const models = L.buildPriorityModels({});
   const historyStore = {};
-  for (const w of manyPool) historyStore[w.word.toLowerCase()] = L.createEmptyWordHistory(w.word, 4, w.word.length);
+  for (const w of manyPool) {
+    const h = L.createEmptyWordHistory(w.word, 4, w.word.length);
+    h.masteryAlpha = 1;
+    h.masteryBeta = 19; // own mastery mean 0.05 -> risk 0.95, severely at-risk
+    historyStore[w.word.toLowerCase()] = h;
+  }
   const scored = L.scoreMemorizedForReintroduction(manyPool, historyStore, models, Math.random);
   assert.equal(L.computeReintroduceShare(scored), 0, "even a large, severely at-risk pool must reserve nothing while the feature is off");
 });
 
 test("computeReintroduceShare's underlying math scales with total excess risk, not a flat percentage, whenever autoBalanceReintroduceMaxShare is turned back on", () => {
-  const baselineFor = (riskByWord) => ({ difficultyBaseline: { predict: (word) => riskByWord[word] ?? 0.05 }, interferenceModel: null, responseTimeBaseline: null });
-  const historyStoreFor = (words) => {
+  const historyStoreWithRisk = (words, riskByWord) => {
     const store = {};
-    for (const w of words) store[w.word.toLowerCase()] = L.createEmptyWordHistory(w.word, 4, w.word.length);
+    for (const w of words) {
+      const h = L.createEmptyWordHistory(w.word, 4, w.word.length);
+      const risk = riskByWord[w.word] ?? 0.05;
+      // Own decayed mastery mean = 1 - risk, split as alpha/beta out of a
+      // fixed total of 10 - purely personal evidence, no baseline involved.
+      h.masteryAlpha = (1 - risk) * 10;
+      h.masteryBeta = risk * 10;
+      store[w.word.toLowerCase()] = h;
+    }
     return store;
   };
+  const models = L.buildPriorityModels({});
 
   const originalMaxShare = L.CONFIG.autoBalanceReintroduceMaxShare;
   L.CONFIG.autoBalanceReintroduceMaxShare = 0.12;
   try {
     // One barely-qualifying word.
     const onePool = [makeWord("barely", 4)];
-    const oneModels = baselineFor({ barely: L.CONFIG.autoBalanceReintroduceMinRisk + 0.02 });
-    const oneScore = L.scoreMemorizedForReintroduction(onePool, historyStoreFor(onePool), oneModels, Math.random);
+    const oneHistoryStore = historyStoreWithRisk(onePool, { barely: L.CONFIG.autoBalanceReintroduceMinRisk + 0.02 });
+    const oneScore = L.scoreMemorizedForReintroduction(onePool, oneHistoryStore, models, Math.random);
     const oneShare = L.computeReintroduceShare(oneScore);
     assert.ok(oneShare > 0, "a single barely-qualifying word should still reserve SOME share");
     assert.ok(oneShare < L.CONFIG.autoBalanceReintroduceMaxShare, "but nowhere near the ceiling");
@@ -235,8 +255,8 @@ test("computeReintroduceShare's underlying math scales with total excess risk, n
     const manyPool = makePool(30, 4, "severe");
     const manyRisk = {};
     for (const w of manyPool) manyRisk[w.word] = 0.95;
-    const manyModels = baselineFor(manyRisk);
-    const manyScore = L.scoreMemorizedForReintroduction(manyPool, historyStoreFor(manyPool), manyModels, Math.random);
+    const manyHistoryStore = historyStoreWithRisk(manyPool, manyRisk);
+    const manyScore = L.scoreMemorizedForReintroduction(manyPool, manyHistoryStore, models, Math.random);
     const manyShare = L.computeReintroduceShare(manyScore);
     assert.ok(manyShare > oneShare, "more/riskier eligible content should reserve a bigger share");
     assert.ok(Math.abs(manyShare - L.CONFIG.autoBalanceReintroduceMaxShare) < 1e-9, "a large, severely at-risk pool should saturate at the ceiling, not exceed it");
@@ -376,17 +396,33 @@ test("computeSelectionWeight with category 'new' (or omitted) gives a higher-ris
   assert.ok(weightHardNew > weightEasyNew, "category 'new' should favor the harder (higher-risk) word");
 });
 
-test("computeSelectionWeight with category 'learning' gives a higher-PREDICTED-risk word a LOWER weight - the opposite direction from 'new', to clear near-mastered backlog words fastest", () => {
+test("computeSelectionWeight with category 'learning' ranks purely by the word's OWN decayed mastery (masteryAlpha/masteryBeta) - NOT predictWordDifficulty's modeled risk at all - so a word the generic model calls 'hard' but personally has a rock-solid recovery record outranks one the model calls 'easy' but personally is still shaky", () => {
   const now = 1000000;
-  const models = { difficultyBaseline: { predict: (word) => (word === "hard" ? 0.9 : 0.1) }, interferenceModel: null, responseTimeBaseline: null };
-  const hard = { word: "hard", level: 4 };
-  const easy = { word: "easy", level: 4 };
+  // A baseline that says the OPPOSITE of what each word's own mastery says,
+  // to prove the model's guess has zero influence here.
+  const models = { difficultyBaseline: { predict: (word) => (word === "modelHard" ? 0.9 : 0.1) }, interferenceModel: null, responseTimeBaseline: null };
+  const modelHard = { word: "modelHard", level: 4 };
+  const modelEasy = { word: "modelEasy", level: 4 };
 
-  const weightHard = L.computeSelectionWeight(hard, null, models, now, "learning");
-  const weightEasy = L.computeSelectionWeight(easy, null, models, now, "learning");
+  const weightModelHardButReallySolid = L.computeSelectionWeight(modelHard, { masteryAlpha: 9, masteryBeta: 1 }, models, now, "learning");
+  const weightModelEasyButReallyShaky = L.computeSelectionWeight(modelEasy, { masteryAlpha: 1, masteryBeta: 9 }, models, now, "learning");
   assert.ok(
-    weightEasy > weightHard,
-    `category 'learning' should favor the predicted-EASIER word, to clear it off the backlog first (easy=${weightEasy}, hard=${weightHard})`
+    weightModelHardButReallySolid > weightModelEasyButReallyShaky,
+    `a word with a solid personal recovery record should outrank a shaky one, regardless of what the generic model guesses about either (solid=${weightModelHardButReallySolid}, shaky=${weightModelEasyButReallyShaky})`
+  );
+});
+
+test("computeSelectionWeight with category 'reintroduce' ranks purely by the word's OWN decayed mastery, opposite direction from 'learning' - a Memorized word whose personal track record has started slipping resurfaces before one that's still rock-solid, regardless of the generic model", () => {
+  const now = 1000000;
+  const models = { difficultyBaseline: { predict: (word) => (word === "modelHard" ? 0.9 : 0.1) }, interferenceModel: null, responseTimeBaseline: null };
+  const modelHard = { word: "modelHard", level: 4 };
+  const modelEasy = { word: "modelEasy", level: 4 };
+
+  const weightSlipping = L.computeSelectionWeight(modelEasy, { masteryAlpha: 1, masteryBeta: 9 }, models, now, "reintroduce");
+  const weightSolid = L.computeSelectionWeight(modelHard, { masteryAlpha: 9, masteryBeta: 1 }, models, now, "reintroduce");
+  assert.ok(
+    weightSlipping > weightSolid,
+    `a slipping Memorized word should outrank a still-solid one under 'reintroduce', regardless of what the generic model guesses about either (slipping=${weightSlipping}, solid=${weightSolid})`
   );
 });
 
@@ -971,26 +1007,32 @@ test("selectQuestions never includes a Memorized word by default - opts.reintrod
   assert.deepEqual(selection, [], "a Memorized word must not resurface without opting into reintroduction");
 });
 
+// A Memorized word (classifyState needs h.incorrect > 0 and correctStreak
+// >= memorizedStreak) whose own decayed mastery is set directly to a chosen
+// risk level - real personal evidence, not a generic baseline guess.
+function makeShakyMemorized(word, level, risk) {
+  const h = L.createEmptyWordHistory(word, level, word.length);
+  Object.assign(h, { attempts: 5, correct: 3, incorrect: 2, correctStreak: 2, lastResult: "correct" });
+  h.masteryAlpha = (1 - risk) * 10;
+  h.masteryBeta = risk * 10;
+  return h;
+}
+
 test("selectQuestions with opts.reintroduceMemorized reintroduces nothing while autoBalanceReintroduceMaxShare is 0 (currently disabled)", () => {
   const historyStore = {};
   const riskyWords = [];
   for (let i = 0; i < 6; i++) {
     const word = "risky" + i;
     riskyWords.push(makeWord(word, 4));
-    const h = L.createEmptyWordHistory(word, 4, word.length);
-    L.recordAttempt(h, { correct: true, timestamp: 1000 });
-    historyStore[word] = h;
+    historyStore[word] = makeShakyMemorized(word, 4, 0.9);
   }
   const newWords = makePool(50, 4, "fresh");
   const pool = riskyWords.concat(newWords);
-  const aiSignals = {};
-  for (const w of riskyWords) aiSignals[w.word] = { priorDifficulty: 1.0 };
   const selection = L.selectQuestions({
     pool: pool,
     historyStore: historyStore,
     size: 100,
     ratio: { new: 1, incorrect: 0, learning: 0 },
-    aiSignals: aiSignals,
     reintroduceMemorized: true,
     random: seededRandom(7),
   });
@@ -1000,22 +1042,17 @@ test("selectQuestions with opts.reintroduceMemorized reintroduces nothing while 
   );
 });
 
-test("selectQuestions with opts.reintroduceMemorized carves Memorized words the prediction model rates at-risk into the round when autoBalanceReintroduceMaxShare is turned back on - a single barely-qualifying word is NOT guaranteed a slot (share is risk-driven, see computeReintroduceShare), but enough aggregate risk is", () => {
+test("selectQuestions with opts.reintroduceMemorized carves Memorized words the learner's OWN decayed mastery rates at-risk into the round when autoBalanceReintroduceMaxShare is turned back on - a single barely-qualifying word is NOT guaranteed a slot (share is risk-driven, see computeReintroduceShare), but enough aggregate risk is", () => {
   const historyStore = {};
   const riskyWords = [];
+  // Enough AGGREGATE excess-risk pressure across all 6 to clear a real share.
   for (let i = 0; i < 6; i++) {
     const word = "risky" + i;
     riskyWords.push(makeWord(word, 4));
-    const h = L.createEmptyWordHistory(word, 4, word.length);
-    L.recordAttempt(h, { correct: true, timestamp: 1000 });
-    historyStore[word] = h;
+    historyStore[word] = makeShakyMemorized(word, 4, 0.9);
   }
   const newWords = makePool(50, 4, "fresh");
   const pool = riskyWords.concat(newWords);
-  // A baseline that flags every "risky*" word as maximally risky - enough
-  // AGGREGATE excess-risk pressure across all 6 to clear a real share.
-  const aiSignals = {};
-  for (const w of riskyWords) aiSignals[w.word] = { priorDifficulty: 1.0 };
 
   const originalMaxShare = L.CONFIG.autoBalanceReintroduceMaxShare;
   L.CONFIG.autoBalanceReintroduceMaxShare = 0.12;
@@ -1025,7 +1062,6 @@ test("selectQuestions with opts.reintroduceMemorized carves Memorized words the 
       historyStore: historyStore,
       size: 100,
       ratio: { new: 1, incorrect: 0, learning: 0 },
-      aiSignals: aiSignals,
       reintroduceMemorized: true,
       random: seededRandom(7),
     });

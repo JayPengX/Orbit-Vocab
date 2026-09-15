@@ -248,13 +248,13 @@
     // being wrong. Both are gone: a Memorized word is never automatically
     // rescheduled by classifyState/categorizeWords any more (it simply
     // stays "memorized" - see categorizeWords). Instead, auto mode reserves
-    // a slice of each round for Memorized words the EXISTING
-    // difficulty-prediction system (predictWordDifficulty - the same
-    // baseline/interference/own-error-rate model already used for
-    // new/incorrect/learning words) currently rates as at real risk of
-    // being gotten wrong - reusing data already being tracked (length,
-    // level, orthographic interference with current struggles, its own
-    // decayed mastery estimate) rather than a fixed calendar.
+    // a slice of each round for Memorized words THIS LEARNER'S OWN decayed
+    // mastery estimate (masteryMean - see scoreMemorizedForReintroduction)
+    // currently rates as at real risk of being gotten wrong - a Memorized
+    // word already has real personal attempt history, so (same reasoning
+    // as the incorrect/learning categories - see computeSelectionWeight's
+    // own comment) this is measured directly from that history, not a
+    // generic length/level/AI-prior guess, and not a fixed calendar either.
     //
     // How big that slice is is ITSELF risk-driven (see
     // computeReintroduceShare), not a flat percentage: a Memorized word
@@ -945,12 +945,20 @@
     return h.avgCorrectResponseMs / expected;
   }
 
-  /* ---------- Predicting word difficulty - one system for new, incorrect,
-     and learning words alike ----------
-     The full pipeline organizes every signal this app has into four
-     categories, each answering a different question about a candidate
-     word, combined in computeSelectionWeight (see that function's own
-     comment for exactly how):
+  /* ---------- Predicting word difficulty - the cold-start model for
+     never-attempted ("new") words only ----------
+     Once a word has ANY of this learner's own real attempts on it
+     (incorrect/learning/reintroduce - see classifyState), computeSelectionWeight
+     ranks it purely by its own decayed personal track record (incorrectStreak
+     or masteryMean - see that function's own comment) and never calls into
+     this model at all: real, personal evidence always outranks a generic
+     guess once it exists. This pipeline is what's left for a word that has
+     NO such evidence yet - a "new" word has nothing but general properties
+     of the word itself, and this learner's broader struggle patterns, to go
+     on. The full pipeline organizes every signal available for that case
+     into four categories, each answering a different question about a
+     candidate word, combined in computeSelectionWeight (see that function's
+     own comment for exactly how):
 
        A. WHAT KIND OF WORD IS THIS, OBJECTIVELY? - computeDifficultyBaseline
           below: length, curriculum level, doubled letters, and (once
@@ -971,9 +979,10 @@
           which DIRECTION risk should push the weight depends on the
           category (new words favor high risk, to front-load likely-to-be-
           missed words while they're still being introduced; incorrect/
-          learning words favor LOW risk, to clear near-mastered backlog
-          words off the list fastest - see computeSelectionWeight's own
-          comment); and, separately, rankCandidates interleaves per-level
+          learning/reintroduce words are ranked by real personal evidence
+          instead of this model at all, in whichever direction that
+          category needs - see computeSelectionWeight's own comment); and,
+          separately, rankCandidates interleaves per-level
           rankings by computeLevelBalanceModel's share weights (see
           mergeByLevelShare) so a multi-level auto-mode round can't let one
           selected level crowd out another just because its words score
@@ -1022,13 +1031,14 @@
      have.
 
      A never-attempted ("new") word has nothing but these two signals to go
-     on. An already-attempted (incorrect/learning) word has something far
-     better available: its OWN observed track record on THIS specific user
-     - so predictWordDifficulty (below) blends that in too, once there's
-     enough of it to trust over the general baseline. This is what makes it
-     one system for new/incorrect/learning alike, not three - a review word
-     isn't "predicted" difficult, its difficulty is directly measured, and
-     that measurement only gets more trusted as more attempts accumulate. */
+     on - predictWordDifficulty (below) still blends in a word's own
+     empirical error rate too, for the rare case this is called with a
+     history that already has attempts, but computeSelectionWeight itself
+     never does that for an already-attempted word any more: once a word
+     has real personal evidence (incorrect/learning/reintroduce), that
+     evidence is used directly (see masteryMean) rather than being blended
+     into this general model at all - a review word isn't "predicted"
+     difficult, its difficulty is directly measured. */
 
   // Consecutive-letter bigrams of a word, e.g. "quiet" -> ["qu","ui","ie","et"].
   function bigramsOf(word) {
@@ -1311,29 +1321,44 @@
 
   // Turns a word's difficulty into a full weightedShuffle weight - but
   // WHAT COUNTS AS "difficulty" and which DIRECTION it pulls the weight
-  // both depend on `category`:
+  // both depend on `category`. The one dividing line that matters: does
+  // this word have any of THIS learner's own real attempts on it yet?
   //
-  //   - "new"/"reintroduce" (or omitted): predictWordDifficulty's modeled
-  //     risk (length/level/POS/AI-prior baseline, blended with interference
-  //     and the word's own decayed error rate once it has one) - HIGHER
-  //     risk -> HIGHER weight. A never-seen word predicted hard is exactly
-  //     the one worth spending a new-word slot on now, while attention is
-  //     being allocated anyway.
-  //   - "learning": the SAME modeled risk, but LOWER risk -> HIGHER weight -
-  //     clear the ones closest to mastered off the list fastest.
-  //   - "incorrect": NOT predictWordDifficulty at all - purely this word's
-  //     own incorrectStreak (consecutive times YOU have personally gotten
-  //     it wrong, nothing else), fewer -> HIGHER weight. Every word here
-  //     has already been directly, personally confirmed wrong at least
-  //     once, so this is the one place a generic model (word length,
-  //     curriculum level, an AI-generated guess about how hard the word
-  //     "should" be) has nothing useful left to add and can only get in the
-  //     way - it has no way to know a word the model calls "easy" is one
-  //     THIS learner keeps missing, and blending its guess in anyway is
-  //     exactly what made review feel like it was calling genuinely hard
-  //     words "easy" and stalling on them. "Easiest first" here means what
-  //     it says: ranked by real, observable evidence of how close each
-  //     word is to actually clearing, not a prediction about it.
+  //   - "new" (or omitted): a never-attempted word has no personal data to
+  //     go on at all, so - and only so - this falls back to
+  //     predictWordDifficulty's modeled risk (length/level/POS/AI-prior
+  //     baseline, blended with interference from current struggles).
+  //     HIGHER risk -> HIGHER weight: a never-seen word predicted hard is
+  //     exactly the one worth spending a new-word slot on now, while
+  //     attention is being allocated anyway.
+  //   - "incorrect": purely this word's own incorrectStreak (consecutive
+  //     times YOU have personally gotten it wrong, nothing else), fewer ->
+  //     HIGHER weight.
+  //   - "learning": purely this word's own decayed mastery estimate (see
+  //     masteryMean - a running Beta-Bernoulli posterior built ENTIRELY
+  //     from this word's own recorded attempts, with zero baseline/
+  //     interference mixed in), higher mastery -> HIGHER weight - clear the
+  //     ones closest to mastered off the list fastest.
+  //   - "reintroduce": the same own-mastery estimate, opposite direction -
+  //     LOWER mastery (higher own risk) -> HIGHER weight, so a Memorized
+  //     word whose personal track record has started slipping resurfaces
+  //     before one that's still rock-solid.
+  //
+  // "incorrect", "learning", and "reintroduce" all share one reason for
+  // bypassing predictWordDifficulty entirely: every word in any of those
+  // three buckets has, by definition, already been personally attempted by
+  // THIS learner at least once (that's how it got there - see
+  // classifyState). A generic model (word length, curriculum level, an
+  // AI-generated guess about how hard the word "should" be) has nothing
+  // useful left to add once real, personal evidence exists, and can only
+  // get in the way - it has no way to know a word it calls "easy" is one
+  // THIS learner keeps missing, and blending its guess in anyway is exactly
+  // what made review feel like it was calling genuinely hard words "easy"
+  // and stalling on them. Only "new" words have no personal evidence yet to
+  // prefer over that guess. "Easiest first" (learning/incorrect) and
+  // "riskiest first" (reintroduce) both mean what they say here: ranked by
+  // real, observable evidence of this learner's own performance on this
+  // exact word, never a prediction standing in for it.
   //
   // Beyond that baseline pull, two multiplicative adjustments layer on top
   // for every category - a slower-than-expected response time (still a
@@ -1364,9 +1389,12 @@
     if (category === "incorrect") {
       const severity = clamp(((history && history.incorrectStreak) || 0) / CONFIG.backlogSeverityCap, 0, 1);
       effectiveRisk = 1 - severity;
+    } else if (category === "learning") {
+      effectiveRisk = masteryMean(history);
+    } else if (category === "reintroduce") {
+      effectiveRisk = 1 - masteryMean(history);
     } else {
-      const risk = predictWordDifficulty(w.word, w.level, history, models.difficultyBaseline, models.interferenceModel, w.pos);
-      effectiveRisk = category === "learning" ? 1 - risk : risk;
+      effectiveRisk = predictWordDifficulty(w.word, w.level, history, models.difficultyBaseline, models.interferenceModel, w.pos);
     }
     let weight = 0.5 + effectiveRisk * 2;
 
@@ -1768,19 +1796,24 @@
   /* ---------- Question selection: ratio-driven, one mode ---------- */
 
   // Scores Memorized words for reintroduction (see CONFIG's own
-  // "Reintroducing Memorized words" comment) - reuses the exact same
-  // difficulty-prediction model already built for new/incorrect/learning
-  // words (`models`, from buildPriorityModels), so a Memorized word that
-  // now looks similar to a currently-struggling word, or whose own decayed
-  // track record has started slipping, scores as at-risk. `random`
-  // pre-samples down to CONFIG.autoBalanceReintroduceScoringCap BEFORE
-  // scoring when the Memorized pool is larger than that, so a large,
-  // long-used vocabulary doesn't pay to run predictWordDifficulty over
-  // every single Memorized word every round just to pick a handful.
-  // Returns [{w, risk}] - the single source both rankEligibleForReintroduction
-  // and computeReintroduceShare below work from, so a round's candidate
-  // list and its share are always computed from the SAME sample, never two
-  // independently-drawn ones that could disagree.
+  // "Reintroducing Memorized words" comment) - risk here is purely
+  // `1 - masteryMean`, this word's own decayed Beta-Bernoulli estimate
+  // built entirely from THIS learner's real attempts, with no generic
+  // baseline/interference blended in. A Memorized word, by definition, has
+  // already been personally attempted (repeatedly - see classifyState), so
+  // there is always real personal evidence to rank it by; a generic guess
+  // about how hard the word "should" be would only risk contradicting that
+  // evidence, same reasoning as computeSelectionWeight's own "incorrect"/
+  // "learning" branches. `random` pre-samples down to
+  // CONFIG.autoBalanceReintroduceScoringCap BEFORE scoring when the
+  // Memorized pool is larger than that, so a large, long-used vocabulary
+  // doesn't pay to score every single Memorized word every round just to
+  // pick a handful. Returns [{w, risk}] - the single source both
+  // rankEligibleForReintroduction and computeReintroduceShare below work
+  // from, so a round's candidate list and its share are always computed
+  // from the SAME sample, never two independently-drawn ones that could
+  // disagree. `models` is unused (kept so callers don't need to special-case
+  // this call among the other buildPriorityModels-consuming functions).
   function scoreMemorizedForReintroduction(memorizedWords, historyStore, models, random) {
     if (!memorizedWords.length) return [];
     const sampled =
@@ -1789,7 +1822,7 @@
         : memorizedWords;
     return sampled.map((w) => ({
       w: w,
-      risk: predictWordDifficulty(w.word, w.level, historyFor(historyStore, w.word), models.difficultyBaseline, models.interferenceModel, w.pos),
+      risk: 1 - masteryMean(historyFor(historyStore, w.word)),
     }));
   }
 
