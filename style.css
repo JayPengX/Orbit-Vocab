@@ -197,7 +197,7 @@ body {
   color: var(--muted);
 }
 
-select, input[type="text"] {
+select, input[type="text"], input[type="number"] {
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
@@ -205,6 +205,8 @@ select, input[type="text"] {
   padding: 11px 14px;
   font-size: 1rem;
 }
+
+input[type="number"] { width: 100px; }
 
 input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; min-height: 24px; }
 
@@ -231,6 +233,8 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
   gap: 10px;
   margin-bottom: 8px;
 }
+
+.flashcard-topbar { justify-content: space-between; }
 
 .progress-bar {
   flex: 1;
@@ -303,10 +307,19 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
   font-size: 1rem;
   font-weight: 600;
 }
-.feedback.correct { background: rgba(47,158,68,0.12); color: var(--good); }
-.feedback.wrong { background: rgba(224,49,49,0.1); color: var(--danger); }
-.feedback .answer-title { line-height: 1.3; }
-.feedback .answer-word { font-size: 1.2rem; margin-top: 2px; }
+/* Only the title/badge get the green/red accent color - the box's own
+   background tint is enough to read "correct"/"wrong" at a glance. Tinting
+   EVERY line of text green/red (the previous behavior) meant the wrong-
+   answer diff below (see .diff-miss/.diff-extra) rendered as red-on-red:
+   its highlighted "this is the mistake" spans and the plain surrounding
+   text were both the same color, so the actual diff was nearly impossible
+   to make out against the box's own reddish background. */
+.feedback.correct { background: rgba(47,158,68,0.12); }
+.feedback.wrong { background: rgba(224,49,49,0.08); }
+.feedback .answer-title { line-height: 1.3; font-weight: 700; }
+.feedback.correct .answer-title { color: var(--good); }
+.feedback.wrong .answer-title { color: var(--danger); }
+.feedback .answer-word { font-size: 1.2rem; margin-top: 2px; color: var(--text); }
 
 .hidden { display: none !important; }
 
@@ -335,6 +348,7 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
   font-size: 0.95rem;
   font-weight: 400;
   line-height: 1.5;
+  color: var(--text);
 }
 .answer-diff div + div { margin-top: 2px; }
 
@@ -523,15 +537,17 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 }
 
 .diff-miss {
-  background: rgba(224, 49, 49, 0.15);
+  background: rgba(224, 49, 49, 0.22);
   color: var(--danger);
+  font-weight: 700;
   border-radius: 3px;
   padding: 0 1px;
 }
 
 .diff-extra {
-  background: rgba(224, 49, 49, 0.15);
+  background: rgba(224, 49, 49, 0.22);
   color: var(--danger);
+  font-weight: 700;
   border-radius: 3px;
   padding: 0 1px;
   text-decoration: line-through;
@@ -825,11 +841,17 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 
 /* ---------- Cross-device sync panel ---------- */
 
-#sync-join-fold {
+#sync-join-fold,
+#level-advanced-fold {
   margin-top: 4px;
 }
 
-#sync-join-fold summary {
+#level-advanced-fold {
+  margin-top: 20px;
+}
+
+#sync-join-fold summary,
+#level-advanced-fold summary {
   cursor: pointer;
   color: var(--primary);
   font-weight: 600;
@@ -838,14 +860,24 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
   list-style: none;
 }
 
-#sync-join-fold summary::-webkit-details-marker { display: none; }
-#sync-join-fold summary::before {
+#sync-join-fold summary::-webkit-details-marker,
+#level-advanced-fold summary::-webkit-details-marker { display: none; }
+#sync-join-fold summary::before,
+#level-advanced-fold summary::before {
   content: "▸";
   display: inline-block;
   margin-right: 6px;
   transition: transform 0.15s ease;
 }
-#sync-join-fold[open] summary::before { transform: rotate(90deg); }
+#sync-join-fold[open] summary::before,
+#level-advanced-fold[open] summary::before { transform: rotate(90deg); }
+
+#level-advanced-fold[open] {
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 4px 12px 12px 12px;
+  margin-top: 8px;
+}
 
 #sync-join-fold[open] {
   background: var(--bg);

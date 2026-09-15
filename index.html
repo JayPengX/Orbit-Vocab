@@ -44,14 +44,6 @@
   <!-- HOME / SETUP -->
   <section id="view-home" class="view active">
     <div class="card">
-      <h2>選擇單字範圍</h2>
-      <div class="level-picker" id="level-picker">
-        <label class="level-chip"><input type="checkbox" value="4" checked><span>Level 4</span></label>
-        <label class="level-chip"><input type="checkbox" value="5" checked><span>Level 5</span></label>
-        <label class="level-chip"><input type="checkbox" value="6" checked><span>Level 6</span></label>
-      </div>
-      <p class="hint" id="level-count-hint"></p>
-
       <h2>語速設定</h2>
       <div class="row">
         <label for="rate-select">語速</label>
@@ -128,6 +120,17 @@
         </div>
       </div>
 
+      <details id="level-advanced-fold">
+        <summary>🛠️ 進階：單字等級範圍</summary>
+        <p class="hint">預設會用全部等級。「⚖️ 自動平衡」模式會自動平衡各等級出現的比例，不需要手動調整；想限制只練習特定等級再到這裡調整。</p>
+        <div class="level-picker" id="level-picker">
+          <label class="level-chip"><input type="checkbox" value="4" checked><span>Level 4</span></label>
+          <label class="level-chip"><input type="checkbox" value="5" checked><span>Level 5</span></label>
+          <label class="level-chip"><input type="checkbox" value="6" checked><span>Level 6</span></label>
+        </div>
+        <p class="hint" id="level-count-hint"></p>
+      </details>
+
       <div class="row actions">
         <button class="btn primary" id="start-test-btn">📝 開始測驗</button>
       </div>
@@ -181,8 +184,11 @@
     </div>
   </section>
 
-  <!-- REVIEW LIST (browsable Learning / Incorrect words, with a list view
-       and a flashcard-style swipe view - see app.js's Review List section) -->
+  <!-- REVIEW LIST (browsable Learning / Incorrect words) - always the
+       searchable/sortable/paginated list; 卡片複習模式 (see app.js's Review
+       List section) is a separate dedicated mode entered via the launch
+       panel below, not a view mode toggled within this tab, so coming back
+       to 複習 always lands on this list, never mid-flashcard. -->
   <section id="view-reviewlist" class="view">
     <div class="card">
       <h2>複習</h2>
@@ -193,10 +199,6 @@
       </div>
       <div class="row">
         <input type="text" id="reviewlist-search" placeholder="搜尋單字..." />
-      </div>
-      <div class="row segmented" id="reviewlist-view-tabs">
-        <button type="button" class="segmented-btn active" data-mode="list">📋 列表</button>
-        <button type="button" class="segmented-btn" data-mode="cards">🎴 卡片瀏覽</button>
       </div>
     </div>
 
@@ -211,13 +213,41 @@
       <div id="reviewlist-pager"></div>
     </div>
 
-    <!-- CARD VIEW: one big word at a time, tap to flip, swipe (or ‹ › ) to
-         move through the deck, then an optional test on just these words. -->
-    <div class="card hidden" id="reviewlist-card-panel">
-      <p class="hint" id="reviewlist-card-empty"></p>
-      <div id="reviewlist-card-body" class="hidden">
-        <p class="hint" id="flashcard-batch-hint"></p>
+    <!-- FLASHCARD MODE LAUNCH: pick which deck (答錯待複習／學習中) and how
+         many words (minimum 20), then enter the dedicated 卡片複習模式 view
+         below. -->
+    <div class="card" id="flashcard-launch-panel">
+      <h2>🎴 卡片複習模式</h2>
+      <p class="hint">選擇要複習的單字集合與數量，開始後會進入專屬的複習畫面，可以像測驗一樣中途離開。</p>
+      <div class="row segmented" id="flashcard-launch-category">
+        <button type="button" class="segmented-btn active" data-category="incorrect">❌ 答錯待複習</button>
+        <button type="button" class="segmented-btn" data-category="learning">📖 學習中</button>
+      </div>
+      <div class="row">
+        <label for="flashcard-launch-amount">數量（至少 20 個）</label>
+        <input type="number" id="flashcard-launch-amount" min="20" step="5" value="20" />
+      </div>
+      <p class="hint" id="flashcard-launch-hint"></p>
+      <div class="row actions">
+        <button type="button" class="btn primary" id="flashcard-launch-btn">🎴 開始卡片複習模式</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- FLASHCARD MODE: a dedicated mode (like 單字測驗), entered only from
+       複習's launch panel above, never from a top-level tab - one big word
+       at a time, tap to flip, swipe (or ‹ › ) through the chosen deck, then
+       an optional real test on just these words. Leaving mid-review (via a
+       tab click, or the 結束 button) confirms first, same as leaving a
+       vocabulary test mid-round - see app.js's isLeavingActiveRound. -->
+  <section id="view-flashcard" class="view">
+    <div class="card center-card">
+      <div class="progress-row flashcard-topbar">
         <p class="hint" id="flashcard-progress"></p>
+        <button type="button" class="btn secondary small" id="flashcard-exit-btn" title="提早結束這次卡片複習">結束</button>
+      </div>
+
+      <div id="flashcard-session-body">
         <div class="flashcard-stage">
           <div class="flashcard" id="flashcard">
             <div class="flashcard-level" id="flashcard-level"></div>
@@ -237,6 +267,15 @@
           <button type="button" class="btn primary" id="flashcard-test-btn" disabled>📝 測驗這些單字</button>
         </div>
         <p class="hint" id="flashcard-test-hint"></p>
+      </div>
+
+      <div id="flashcard-finish" class="summary hidden">
+        <h2>這批卡片複習完成！</h2>
+        <p id="flashcard-finish-text"></p>
+        <div class="row actions">
+          <button type="button" class="btn primary" id="flashcard-finish-test-btn">📝 測驗這些單字</button>
+          <button type="button" class="btn secondary" id="flashcard-finish-exit-btn">回複習列表</button>
+        </div>
       </div>
     </div>
   </section>

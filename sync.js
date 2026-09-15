@@ -51,8 +51,12 @@ const SYNC_SCHEMA_VERSION = 2;
 // genuinely idle sends nothing, and a burst of quiz answers (this app
 // saves progress after EVERY single question, unlike Orbit's "save the
 // whole schedule on demand") collapses into at most one sync round trip
-// per this many milliseconds instead of one per answer.
-const ACTIVITY_SYNC_THROTTLE_MS = 5000;
+// per this many milliseconds instead of one per answer. Widened from an
+// earlier 5s: a learner doing a long, fast-paced session (many rounds back
+// to back for an hour or two) could otherwise still add up to enough
+// requests to trip the Worker's own rate limit - see the backoff state
+// just below, which is the other half of staying under that limit.
+const ACTIVITY_SYNC_THROTTLE_MS = 20000;
 
 /* ---------- Local storage helpers ---------- */
 
@@ -336,12 +340,44 @@ function buildSyncSnapshotData() {
 
 /* ---------- Worker calls ---------- */
 
+// ---- Rate-limit backoff ----
+// The Worker this app piggybacks on (see the file-level comment) enforces
+// its own per-code rate limit and answers a too-frequent request with a
+// plain HTTP 429 - previously that just surfaced as one failed sync with no
+// lasting effect, so the very next trigger (another answer, a tab
+// refocus, the next FORCE_SYNC_EVERY_N_ANSWERS-driven push) immediately
+// tried again and could just as easily get rate-limited again, especially
+// across a long, active session. A 429 now opens a cooldown window instead:
+// EVERY sync trigger (see runSyncTick's own check below - this covers the
+// activity throttle, the force-every-N-answers path, visibility/online
+// events, and reconcileBeforeStarting alike, since they all funnel through
+// syncTick) skips the network entirely until the window passes, doubling on
+// each consecutive 429 (capped) rather than hammering the same limit again
+// a moment later. `dirty` is left untouched by a skip, so whatever change
+// prompted it is still picked up automatically once the window passes.
+const RATE_LIMIT_BACKOFF_BASE_MS = 30000;
+const RATE_LIMIT_BACKOFF_MAX_MS = 10 * 60 * 1000;
+let rateLimitBackoffUntil = 0;
+let consecutiveRateLimitHits = 0;
+function registerRateLimitHit() {
+  consecutiveRateLimitHits += 1;
+  const backoff = Math.min(RATE_LIMIT_BACKOFF_MAX_MS, RATE_LIMIT_BACKOFF_BASE_MS * Math.pow(2, consecutiveRateLimitHits - 1));
+  rateLimitBackoffUntil = Date.now() + backoff;
+}
+function clearRateLimitBackoff() {
+  consecutiveRateLimitHits = 0;
+  rateLimitBackoffUntil = 0;
+}
+
 function proxyUrl(code, extraParams) {
   const params = new URLSearchParams(Object.assign({ code: code }, extraParams || {}));
   return `${VOCAB_SYNC_PROXY_URL}?${params.toString()}`;
 }
 async function proxyErrorMessage(response) {
-  if (response.status === 429) return "請求過於頻繁，請稍後再試。";
+  if (response.status === 429) {
+    registerRateLimitHit();
+    return "請求過於頻繁，請稍後再試。";
+  }
   const errorJson = await response.json().catch(() => ({}));
   return errorJson.error?.message || response.statusText || `HTTP ${response.status}`;
 }
@@ -353,6 +389,7 @@ async function fetchSyncDoc(code, passcode) {
   const response = await fetch(proxyUrl(code, { passcode: passcode || "" }));
   if (response.status === 400) return { ok: true, exists: false, updateTime: "", payload: "" };
   if (!response.ok) return { ok: false, error: await proxyErrorMessage(response) };
+  clearRateLimitBackoff();
   const data = await response.json();
   return { ok: true, exists: !!data.exists, updateTime: data.updateTime || "", payload: data.payload || "" };
 }
@@ -365,6 +402,7 @@ async function createSyncDoc(payload) {
       body: JSON.stringify({ payload: payload }),
     });
     if (!response.ok) return { ok: false, error: await proxyErrorMessage(response) };
+    clearRateLimitBackoff();
     const data = await response.json();
     return { ok: true, code: data.code, passcode: data.managerPasscode, updateTime: data.updateTime || "" };
   } catch (error) {
@@ -379,6 +417,7 @@ async function writeSyncDoc(code, payload, passcode) {
     body: JSON.stringify({ payload: payload, passcode: passcode }),
   });
   if (!response.ok) return { ok: false, error: await proxyErrorMessage(response) };
+  clearRateLimitBackoff();
   const doc = await response.json();
   return { ok: true, updateTime: doc.updateTime || "" };
 }
@@ -386,6 +425,7 @@ async function writeSyncDoc(code, payload, passcode) {
 async function deleteSyncDoc(code, passcode) {
   const response = await fetch(proxyUrl(code, { passcode: passcode }), { method: "DELETE" });
   if (!response.ok) return { ok: false, error: await proxyErrorMessage(response) };
+  clearRateLimitBackoff();
   return { ok: true };
 }
 
@@ -530,6 +570,16 @@ async function pullSnapshot(opts) {
 // start-test-btn) uses `changed` to decide whether it's worth refreshing
 // an already-started round's question list.
 async function runSyncTick() {
+  // Skip the network entirely during an active rate-limit cooldown (see
+  // registerRateLimitHit above) - `dirty`/`hasSyncedSinceLoad` are
+  // deliberately left untouched so whatever triggered this tick is picked
+  // up automatically by the next one once the window passes, rather than
+  // needing the user to notice and retry manually.
+  if (Date.now() < rateLimitBackoffUntil) {
+    const secondsLeft = Math.ceil((rateLimitBackoffUntil - Date.now()) / 1000);
+    setSyncStatus(`同步請求過於頻繁，${secondsLeft} 秒後自動重試（學習紀錄已存在本機，不會遺失）。`, true);
+    return { ok: false, changed: false };
+  }
   if (dirty || !hasSyncedSinceLoad) {
     const result = await pushSnapshot();
     hasSyncedSinceLoad = true;
@@ -853,6 +903,15 @@ function vocabSyncNow() {
     return;
   }
   withButtonDisabled("sync-now-btn", async () => {
+    // Same cooldown as the automatic path (see runSyncTick) - manually
+    // mashing "立即同步" during an active rate-limit backoff would just
+    // extend it further for no benefit, so this respects the same window
+    // instead of always hitting the network.
+    if (Date.now() < rateLimitBackoffUntil) {
+      const secondsLeft = Math.ceil((rateLimitBackoffUntil - Date.now()) / 1000);
+      setSyncStatus(`同步請求過於頻繁，${secondsLeft} 秒後自動重試（學習紀錄已存在本機，不會遺失）。`, true);
+      return;
+    }
     setSyncStatus("正在同步…");
     // Same reasoning as syncTick(): "haven't reconciled this session yet"
     // is treated the same as dirty, both routed through the guarded

@@ -95,16 +95,25 @@
     // review (nothing to review yet, so it's 100% new words) regardless of
     // this number.
     autoBalanceBacklogSaturation: 40,
-    // Review share never exceeds this even at a saturated backlog - some
-    // new words always keep trickling in rather than the round ever going
-    // 100% review, so the backlog itself keeps shrinking relative to total
-    // vocabulary instead of just holding steady.
-    autoBalanceMaxReviewShare: 0.75,
+    // Review share never exceeds this even at a saturated backlog - a
+    // sliver of new words always keeps trickling in rather than the round
+    // ever going fully 100% review. Deliberately NOT a large fixed floor
+    // (this used to be 0.75, guaranteeing new words at least 25% of every
+    // auto-mode round regardless of how huge the backlog got) - a learner
+    // who has fallen far behind on review needs the round to actually
+    // prioritize clearing that backlog, not have a quarter of every round
+    // spent on new words no matter what. Only a small floor remains, just
+    // enough that new content never fully stops appearing.
+    autoBalanceMaxReviewShare: 0.95,
     // Review share floor the moment there IS any backlog at all (jumps
     // straight from 0% at zero backlog to at least this much) - a single
     // incorrect word still deserves noticeable practice time, not a
-    // rounding-error sliver of a huge round.
-    autoBalanceMinReviewShare: 0.15,
+    // rounding-error sliver of a huge round. Kept modest (lower than the
+    // ceiling above is high) so a genuinely small backlog against a large
+    // new-word pool still stays mostly new words - only a large,
+    // saturated backlog should push review share up near the new, higher
+    // ceiling.
+    autoBalanceMinReviewShare: 0.1,
     // Within the review share, incorrect words are weighted this many times
     // more urgently than learning words per-word (still-wrong beats
     // almost-there) when splitting the share between the two categories.
@@ -156,6 +165,17 @@
     // similarity is still real signal on its own and shouldn't be discarded
     // just because AI signals are also available.
     difficultySemanticWeight: 0.3,
+
+    // ---- Level balancing (auto mode) ----
+    // When a round spans more than one curriculum level, a level whose
+    // words have on average been attempted less than the other selected
+    // levels is "under-served" and gets a selection boost; one attempted
+    // more than average gets dampened. This keeps auto mode from letting
+    // whichever level happens to rank easiest/hardest under the difficulty
+    // model alone quietly dominate every round - each selected level gets
+    // its fair turn regardless of how its words individually score.
+    autoLevelBalanceWeightMin: 0.6,
+    autoLevelBalanceWeightMax: 1.8,
   };
 
   const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -612,8 +632,39 @@
 
   /* ---------- Predicting word difficulty - one system for new, incorrect,
      and learning words alike ----------
-     Two independent signals grounded in how word memorization is actually
-     understood to work, not a single fragile heuristic:
+     The full pipeline organizes every signal this app has into four
+     categories, each answering a different question about a candidate
+     word, combined in computeSelectionWeight (see that function's own
+     comment for exactly how):
+
+       A. WHAT KIND OF WORD IS THIS, OBJECTIVELY? - computeDifficultyBaseline
+          below: length, curriculum level, doubled letters, and (once
+          data/ai_signals.json exists for the word) an LLM-estimated prior.
+          True of the word for anyone, not just this learner.
+       B. WHAT DOES THIS LEARNER SPECIFICALLY STRUGGLE WITH? -
+          computeInterferenceModel below: orthographic (bigram-overlap) and
+          AI-flagged semantic similarity to words THIS learner currently
+          has wrong - a personalized risk signal no generic word-difficulty
+          estimate could know.
+       C. WHAT DOES THIS WORD'S OWN TRACK RECORD SAY? - folded in directly
+          by predictWordDifficulty below once a word has real attempts: its
+          own empirical error rate, shrunk toward (A)+(B) by how much data
+          it has (CONFIG.difficultyOwnDataShrinkageK). The single most
+          informative signal available once it exists at all.
+       D. IS SELECTION ITSELF BALANCED? - two adjustments applied after a
+          risk score exists, in computeSelectionWeight: which DIRECTION
+          risk should push the weight depends on the category (new words
+          favor high risk, to front-load likely-to-be-missed words while
+          they're still being introduced; incorrect/learning words favor
+          LOW risk, to clear near-mastered backlog words off the list
+          fastest - see that function's own comment), and
+          computeLevelBalanceModel keeps a multi-level auto-mode round from
+          letting one selected level dominate just because its words score
+          differently under (A)-(C).
+
+     (A) and (B) are the two original, independent signals grounded in how
+     word memorization is actually understood to work, not a single
+     fragile heuristic:
 
      1. computeDifficultyBaseline - an OBJECTIVE difficulty estimate from
         properties of the word itself: length (more letters means more
@@ -886,19 +937,39 @@
   }
 
   // Turns a word's predicted difficulty (see predictWordDifficulty) into a
-  // full weightedShuffle weight, the same for new/incorrect/learning words
-  // alike: predicted risk sets the baseline pull, then two multiplicative
-  // adjustments layer on top exactly as they always have for review words -
-  // a slower-than-expected response time (still a meaningful signal beyond
-  // raw correctness: hesitation on a technically-right answer) nudges the
-  // weight up further, and a temporary dampener right after the word was
-  // last tested keeps the same word or two from monopolizing every round.
-  // A never-attempted word simply has no response time or last-seen data,
-  // so both adjustments are no-ops for it - one formula, no per-category
-  // branching required.
-  function computeSelectionWeight(w, history, models, now) {
+  // full weightedShuffle weight - but which DIRECTION predicted difficulty
+  // pulls the weight depends on `category`:
+  //
+  //   - "new" (or omitted): higher predicted risk -> higher weight. A
+  //     never-seen word predicted hard is exactly the one worth spending a
+  //     new-word slot on now, while attention is being allocated anyway -
+  //     surfacing it early is more useful than a new word the learner would
+  //     likely have gotten right regardless.
+  //   - "incorrect"/"learning": LOWER predicted risk -> higher weight.
+  //     These words are already in the review backlog; the goal here is to
+  //     clear the ones closest to mastered off the list fastest (a correct
+  //     answer moves them toward Memorized, a word not shown doesn't), so
+  //     review slots preferentially go to backlog words most likely to be
+  //     answered right. This leaves the genuinely hard backlog words - the
+  //     ones that keep NOT clearing - relatively more prominent in what's
+  //     left, which is what the learner actually needs to focus on.
+  //
+  // Beyond that baseline pull, two multiplicative adjustments layer on top
+  // exactly as they always have for review words - a slower-than-expected
+  // response time (still a meaningful signal beyond raw correctness:
+  // hesitation on a technically-right answer) nudges the weight up further,
+  // and a temporary dampener right after the word was last tested keeps the
+  // same word or two from monopolizing every round. A never-attempted word
+  // simply has no response time or last-seen data, so both adjustments are
+  // no-ops for it. Finally, `models.levelBalance` (see
+  // computeLevelBalanceModel), when present, multiplies in a per-level
+  // boost/dampen so a multi-level auto-mode round doesn't let one selected
+  // level dominate just because its words score differently under the
+  // difficulty model.
+  function computeSelectionWeight(w, history, models, now, category) {
     const risk = predictWordDifficulty(w.word, w.level, history, models.difficultyBaseline, models.interferenceModel);
-    let weight = 0.5 + risk * 2;
+    const effectiveRisk = category === "incorrect" || category === "learning" ? 1 - risk : risk;
+    let weight = 0.5 + effectiveRisk * 2;
 
     const rel = relativeResponseTime(history, models.responseTimeBaseline);
     if (rel != null) weight *= clamp(rel, CONFIG.timeWeightMin, CONFIG.timeWeightMax);
@@ -907,7 +978,44 @@
     const daysSince = lastSeen ? Math.max(0, (now - lastSeen) / ONE_DAY_MS) : Infinity;
     weight *= clamp(daysSince / CONFIG.reviewRecencyFullRecoveryDays, 0.15, 1);
 
+    if (models.levelBalance) weight *= models.levelBalance.weightOf(w.level);
+
     return weight;
+  }
+
+  // Per-level selection-weight multipliers for auto mode (see CONFIG's own
+  // "Level balancing" comment above). `pool` is whatever set of levels the
+  // round is drawn from - with only one level selected there is nothing to
+  // balance, so this returns null (a no-op) rather than a model whose
+  // single level would always resolve to a no-op weight of 1 anyway.
+  function computeLevelBalanceModel(pool, historyStore) {
+    const byLevel = {};
+    for (const w of pool || []) {
+      const lvl = w.level;
+      if (lvl == null) continue;
+      if (!byLevel[lvl]) byLevel[lvl] = { count: 0, totalAttempts: 0 };
+      byLevel[lvl].count += 1;
+      const h = historyFor(historyStore, w.word);
+      byLevel[lvl].totalAttempts += (h && h.attempts) || 0;
+    }
+    const levels = Object.keys(byLevel);
+    if (levels.length < 2) return null;
+
+    const avgPerLevel = levels.map((l) => (byLevel[l].count ? byLevel[l].totalAttempts / byLevel[l].count : 0));
+    const overallAvg = average(avgPerLevel);
+    const weightByLevel = {};
+    for (const l of levels) {
+      const levelAvg = byLevel[l].count ? byLevel[l].totalAttempts / byLevel[l].count : 0;
+      // Below-average exposure -> ratio < 1 -> weight > 1 (boost this
+      // level); above-average -> ratio > 1 -> weight < 1 (dampen it). With
+      // no attempts anywhere yet (overallAvg is 0), every level is exactly
+      // at parity, so this is a no-op until real data exists to balance.
+      const ratio = overallAvg > 0 ? levelAvg / overallAvg : 1;
+      weightByLevel[l] = clamp(1 / Math.max(0.2, ratio), CONFIG.autoLevelBalanceWeightMin, CONFIG.autoLevelBalanceWeightMax);
+    }
+    return {
+      weightOf: (level) => (level != null && weightByLevel[level] != null ? weightByLevel[level] : 1),
+    };
   }
 
   /* ---------- Word categorization ---------- */
@@ -961,17 +1069,17 @@
 
   // Orders a bucket's candidates by predicted difficulty (see
   // computeSelectionWeight) via a WEIGHTED random draw, never a rigid sort
-  // - a predicted-easy word still has some chance of coming up early, a
-  // predicted-hard one is never guaranteed the same slot every round. The
-  // exact same weighting applies whether `words` is the new/incorrect/
-  // learning bucket - there is no per-category branch here at all, that's
-  // the point (see predictWordDifficulty's own comment). With no data
-  // anywhere yet, every word gets an identical weight, which makes this a
-  // plain uniform shuffle in every way that matters.
-  function rankCandidates(words, historyStore, random, now, models) {
+  // - a favored word still has some chance of coming up late, a
+  // disfavored one is never guaranteed the same slot every round.
+  // `category` ("new"/"incorrect"/"learning", forwarded straight to
+  // computeSelectionWeight) is what decides WHICH direction "favored"
+  // means for this particular bucket - see that function's own comment.
+  // With no data anywhere yet, every word gets an identical weight, which
+  // makes this a plain uniform shuffle in every way that matters.
+  function rankCandidates(words, historyStore, random, now, models, category) {
     const withMeta = words.map((w) => {
       const h = historyFor(historyStore, w.word);
-      return { w: w, weight: computeSelectionWeight(w, h, models, now) };
+      return { w: w, weight: computeSelectionWeight(w, h, models, now, category) };
     });
     return weightedShuffle(withMeta.map((x) => x.w), withMeta.map((x) => x.weight), random);
   }
@@ -1122,6 +1230,13 @@
 
     const { unseen, incorrect, learning } = categorizeWords(pool, historyStore);
     const models = buildPriorityModels(historyStore, o.aiSignals);
+    // Level balancing (see computeLevelBalanceModel/CONFIG's own comment)
+    // only makes sense to apply when the caller opts in (auto mode - see
+    // app.js's currentModeRatioFraction/rebalanceAutoModeTail) - the fixed
+    // 新字優先/只複習 presets and the user's own 進階 sliders are a
+    // deliberate manual choice that shouldn't be second-guessed by an
+    // automatic per-level boost/dampen underneath it.
+    if (o.levelBalance) models.levelBalance = computeLevelBalanceModel(pool, historyStore);
     const targets = computeQuestionTargets(size, ratio);
     const categoryWords = { new: unseen, incorrect: incorrect, learning: learning };
 
@@ -1130,7 +1245,7 @@
 
     const buckets = order.map((key) => ({
       key: key,
-      ranked: rankCandidates(categoryWords[key], historyStore, random, now, models),
+      ranked: rankCandidates(categoryWords[key], historyStore, random, now, models, key),
       target: targets[key],
     }));
 
@@ -1248,6 +1363,7 @@
     predictWordDifficulty: predictWordDifficulty,
     buildPriorityModels: buildPriorityModels,
     computeSelectionWeight: computeSelectionWeight,
+    computeLevelBalanceModel: computeLevelBalanceModel,
     categorizeWords: categorizeWords,
     filterMarked: filterMarked,
     selectReviewBatch: selectReviewBatch,
