@@ -711,16 +711,18 @@ function onVocabReady() {
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     syncOnAppActive();
-  } else if (dirty) {
+  } else if (dirty && navigator.onLine) {
     // Best-effort: the tab is being backgrounded/closed with unsynced
     // local changes still pending - try to get them out now rather than
     // waiting for a touch that may never come on this device again today.
+    // Skipped while offline - see the `offline` handler below for why this
+    // is a deliberate no-op rather than an attempt that would just fail.
     pushSnapshot();
   }
 });
 window.addEventListener("pageshow", syncOnAppActive);
 window.addEventListener("pagehide", () => {
-  if (dirty) pushSnapshot();
+  if (dirty && navigator.onLine) pushSnapshot();
 });
 // The one trigger that was missing entirely: launching (or being open)
 // while offline used to mean no automatic sync EVER ran until some other
@@ -728,6 +730,21 @@ window.addEventListener("pagehide", () => {
 // regaining connectivity retries on its own, which is exactly the moment a
 // retry is actually worth attempting.
 window.addEventListener("online", syncOnAppActive);
+// The counterpart: sync is temporarily disabled (not broken, not erroring
+// - simply not attempted at all, same as syncTick's own `!navigator.onLine`
+// guard already ensures for every automatic trigger) for as long as the
+// device is offline. Without this, going offline mid-session left whatever
+// status text was already on screen (e.g. an old "已同步 14:32") sitting
+// there indefinitely with no indication that syncing had quietly stopped -
+// this makes that pause visible and reassures the learner their answers
+// are still being saved (just locally, for now) rather than lost.
+// `notifyLocalChange`'s own dirty flag is untouched by this - whatever
+// wasn't pushed yet is picked up automatically the moment `online` fires.
+window.addEventListener("offline", () => {
+  if (isSyncConfigured()) {
+    setSyncStatus("目前離線，同步已暫時停用（學習紀錄仍正常存在這台裝置）。恢復網路連線後會自動繼續同步。");
+  }
+});
 
 /* ---------- UI entry points ---------- */
 

@@ -690,6 +690,39 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
   z-index: 100;
 }
 
+/* Shown only when init() itself fails (see app.js's showInitErrorBanner) -
+   deliberately simple, self-contained styling that doesn't lean on
+   anything else in the page having rendered correctly. */
+#init-error-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: var(--danger);
+  color: #fff;
+  padding: 14px 16px;
+  padding-top: calc(14px + env(safe-area-inset-top, 0px));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 0.9rem;
+  box-shadow: var(--shadow);
+}
+#init-error-banner p { margin: 0; }
+#init-error-banner button {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  background: #fff;
+  color: var(--danger);
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
 @media (max-width: 480px) {
   .play-btn { width: 88px; height: 88px; font-size: 1.9rem; }
   .flashcard-word { font-size: 1.7rem; }

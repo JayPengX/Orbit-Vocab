@@ -314,8 +314,26 @@ function buildVocabIndex() {
   return index;
 }
 
+// Unlike loadAiSignals below, a failure here is NOT something the rest of
+// the app can just shrug off - with no VOCAB there is nothing to quiz,
+// review, or show progress for. In virtually every real "opened while
+// offline" case this fetch is served instantly from the Service Worker's
+// own cache regardless of connectivity (data/vocab.json is in sw.js's own
+// APP_SHELL, precached on install - see that file's own comment), so this
+// only actually fails in rare edge cases (no Service Worker support, its
+// cache was somehow cleared, or this really is the very first load ever
+// AND it's offline, which no PWA can do anything about). Letting it throw
+// uncaught here would silently abort the rest of init() - the whole page
+// would end up stuck showing static, unwired HTML with no error message
+// at all, which is a much worse failure mode than a clear one.
 async function loadVocab() {
-  const res = await fetch("data/vocab.json?v=__BUILD_VERSION__");
+  let res;
+  try {
+    res = await fetch("data/vocab.json?v=__BUILD_VERSION__");
+  } catch (err) {
+    throw new Error("無法載入單字資料，請確認網路連線後重新整理頁面。");
+  }
+  if (!res.ok) throw new Error("無法載入單字資料，請確認網路連線後重新整理頁面。");
   VOCAB = await res.json();
   VOCAB_BY_LEVEL = { 4: [], 5: [], 6: [] };
   for (const w of VOCAB) VOCAB_BY_LEVEL[w.level].push(w);
@@ -2685,4 +2703,32 @@ async function init() {
   }
 }
 
-init();
+// A failure here means loadVocab() (or something else in init()) threw -
+// see loadVocab's own comment on why that's now a caught, clearly-messaged
+// error instead of an uncaught rejection that would leave the page stuck
+// showing static, unwired HTML with no explanation at all. Shows a plain,
+// dependency-free banner (nothing here can assume the rest of the app's
+// own UI wiring actually ran) with a manual retry, and also retries on its
+// own the moment connectivity returns - the single most likely cause is
+// simply "opened this while offline before anything was ever cached",
+// which fixes itself the moment the network comes back, with no need for
+// the user to notice or tap anything.
+init().catch((err) => {
+  showInitErrorBanner((err && err.message) || "應用程式載入失敗，請確認網路連線後重新整理頁面。");
+  window.addEventListener("online", () => location.reload(), { once: true });
+});
+
+function showInitErrorBanner(message) {
+  const banner = document.createElement("div");
+  banner.id = "init-error-banner";
+  banner.setAttribute("role", "alert");
+  const messageEl = document.createElement("p");
+  messageEl.textContent = message;
+  const retryBtn = document.createElement("button");
+  retryBtn.type = "button";
+  retryBtn.textContent = "🔄 重新整理";
+  retryBtn.addEventListener("click", () => location.reload());
+  banner.appendChild(messageEl);
+  banner.appendChild(retryBtn);
+  document.body.prepend(banner);
+}
