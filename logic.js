@@ -170,7 +170,13 @@
     // Within the review share, incorrect words are weighted this many times
     // more urgently than learning words per-word (still-wrong beats
     // almost-there) when splitting the share between the two categories.
-    autoBalanceIncorrectWeight: 1.5,
+    // Kept high: for a learner with a large vocabulary, the "learning"
+    // bucket can easily contain hundreds of re-surfaced, already-memorized
+    // words just checking in on schedule (see backlogDueReviewBaseWeight
+    // below) - sheer numeric volume there must not be able to outweigh a
+    // much smaller but genuinely-still-wrong "incorrect" bucket just
+    // because there are more of the former.
+    autoBalanceIncorrectWeight: 6,
 
     // ---- Backlog pressure weighting (see computeBacklogPressure) ----
     // The auto-balance ratio above used to treat every backlog word as
@@ -187,12 +193,24 @@
     // the backlog on its own.
     backlogSeverityCap: 4,
     backlogSeverityWeightPerMiss: 0.5,
-    // How many days overdue a re-surfaced Memorized word (see
-    // isDueForReview) needs to reach its full extra weight, and how much
-    // extra weight a fully-overdue one adds - a word overdue by two weeks
-    // is more at risk of genuinely being forgotten than one that only just
-    // became due, even though categorizeWords treats both the same
-    // ("learning") for selection purposes.
+    // A re-surfaced Memorized word due for review (see isDueForReview)
+    // starts from THIS baseline pressure, not the standard 1 every other
+    // backlog word gets - it's a periodic retention check-in on a word
+    // that's already known, not a word still being learned, so it
+    // shouldn't compete on equal footing with one. Without this, a heavy
+    // learner with thousands of words could have hundreds of due-for-review
+    // check-ins outweighing a much smaller but genuinely-struggling
+    // "incorrect"/still-learning backlog purely by numeric volume - exactly
+    // the "my quiz is flooded with easy words I already know instead of the
+    // ones I keep getting wrong" failure mode this fixes.
+    backlogDueReviewBaseWeight: 0.25,
+    // How many days overdue a re-surfaced Memorized word needs to reach its
+    // full extra weight (ADDED on top of backlogDueReviewBaseWeight above,
+    // not the standard 1), and how much extra weight a fully-overdue one
+    // adds - a word overdue by two weeks is more at risk of genuinely being
+    // forgotten than one that only just became due, even though
+    // categorizeWords treats both the same ("learning") for selection
+    // purposes.
     backlogOverdueSaturationDays: 14,
     backlogOverdueMaxWeight: 1.5,
 
@@ -1738,12 +1756,17 @@
     let total = 0;
     for (const w of words) {
       const h = historyFor(historyStore, w.word);
-      let weight = 1;
+      const dueForReview = h && h.dueAt && classifyState(h) === "memorized";
+      // A due-for-review word is a periodic check-in on something already
+      // known, not a word still being learned - see CONFIG's own
+      // "backlogDueReviewBaseWeight" comment for why it starts lower than
+      // every other backlog word's standard baseline of 1.
+      let weight = dueForReview ? CONFIG.backlogDueReviewBaseWeight : 1;
       if (h) {
         if ((h.incorrectStreak || 0) > 1) {
           weight += Math.min(CONFIG.backlogSeverityCap, h.incorrectStreak - 1) * CONFIG.backlogSeverityWeightPerMiss;
         }
-        if (h.dueAt && classifyState(h) === "memorized") {
+        if (dueForReview) {
           const overdueDays = Math.max(0, (at - h.dueAt) / ONE_DAY_MS);
           weight += Math.min(1, overdueDays / CONFIG.backlogOverdueSaturationDays) * CONFIG.backlogOverdueMaxWeight;
         }

@@ -991,7 +991,7 @@ test("computeBacklogPressure weighs a word missed several times in a row higher 
   assert.ok(Math.abs(entrenchedPressure - expectedCapped) < 1e-9, "severity weight should be capped, not grow unbounded with the streak");
 });
 
-test("computeBacklogPressure weighs a re-surfaced Memorized word higher the further past its due date it is, but a freshly-due one is still baseline", () => {
+test("computeBacklogPressure weighs a re-surfaced Memorized word higher the further past its due date it is, but a freshly-due one starts at the LOWERED due-review baseline, not the standard 1", () => {
   const historyStore = {};
   const word = makeWord("overdue", 4);
   const h = L.createEmptyWordHistory("overdue", 4, 7);
@@ -1002,10 +1002,31 @@ test("computeBacklogPressure weighs a re-surfaced Memorized word higher the furt
   const wayOverdue = 3000 + (3 + 30) * 24 * 60 * 60 * 1000; // a month past due
   const justDuePressure = L.computeBacklogPressure([word], historyStore, justDue);
   const wayOverduePressure = L.computeBacklogPressure([word], historyStore, wayOverdue);
-  assert.ok(Math.abs(justDuePressure - 1) < 1e-9, "a word just barely due yet should still read as baseline pressure");
+  assert.ok(
+    Math.abs(justDuePressure - L.CONFIG.backlogDueReviewBaseWeight) < 1e-9,
+    "a word just barely due yet should read as the lowered due-review baseline, not the standard 1 every other backlog word gets"
+  );
   assert.ok(wayOverduePressure > justDuePressure, "a month-overdue Memorized word should weigh more than one that just became due");
-  const expectedCapped = 1 + L.CONFIG.backlogOverdueMaxWeight;
+  const expectedCapped = L.CONFIG.backlogDueReviewBaseWeight + L.CONFIG.backlogOverdueMaxWeight;
   assert.ok(Math.abs(wayOverduePressure - expectedCapped) < 1e-9, "overdue weight should be capped, not grow unbounded forever");
+});
+
+test("computeBacklogPressure: a due-for-review Memorized word contributes far less pressure than a genuinely-incorrect or still-learning word - a big due-for-review backlog must not be able to outweigh real struggle just by numeric volume", () => {
+  const historyStore = {};
+  const dueWord = makeWord("known", 4);
+  const dueHistory = L.createEmptyWordHistory("known", 4, 5);
+  play(dueHistory, [{ correct: true }, { correct: true }]); // memorized, due at +3 days
+  historyStore.known = dueHistory;
+
+  const strugglingWord = makeWord("hard", 4);
+  const strugglingHistory = L.createEmptyWordHistory("hard", 4, 4);
+  L.recordAttempt(strugglingHistory, { correct: false, timestamp: 1000, level: 4, length: 4 });
+  historyStore.hard = strugglingHistory;
+
+  const now = 3000 + 3 * 24 * 60 * 60 * 1000; // dueWord is exactly due now
+  const duePressure = L.computeBacklogPressure([dueWord], historyStore, now);
+  const strugglingPressure = L.computeBacklogPressure([strugglingWord], historyStore, now);
+  assert.ok(duePressure < strugglingPressure, `a freshly-due already-known word (${duePressure}) must weigh less than a word actually gotten wrong (${strugglingPressure})`);
 });
 
 test("computeAutoBalanceRatioForPool gives a more severe backlog a higher review share than an equally-SIZED but mild one - the fix for 'balancing only looks at headcount'", () => {
@@ -1028,6 +1049,33 @@ test("computeAutoBalanceRatioForPool gives a more severe backlog a higher review
   const severeRatio = L.computeAutoBalanceRatioForPool(severeWords.concat(newWords), severeStore, 20000);
   assert.equal(mildWords.length, severeWords.length, "same backlog SIZE in both cases - only severity differs");
   assert.ok(severeRatio.incorrect > mildRatio.incorrect, `an equally-sized but more entrenched backlog should get a bigger review share (mild=${mildRatio.incorrect}, severe=${severeRatio.incorrect})`);
+});
+
+test("computeAutoBalanceRatioForPool: a large due-for-review backlog of already-known words must not drown out a much smaller genuinely-incorrect backlog - the fix for a big vocabulary flooding review with easy words instead of the ones actually still getting missed", () => {
+  const historyStore = {};
+  // 300 words the learner memorized long ago, all now due for their
+  // periodic spaced-repetition check-in - the kind of large "learning"
+  // bucket a heavy user with thousands of words accumulates over time.
+  const dueWords = makePool(300, 4, "known");
+  const now = 3000 + 3 * 24 * 60 * 60 * 1000;
+  for (const w of dueWords) {
+    const h = L.createEmptyWordHistory(w.word, w.level, w.word.length);
+    play(h, [{ correct: true }, { correct: true }]); // memorized at t=3000, due at +3 days
+    historyStore[w.word.toLowerCase()] = h;
+  }
+  // A much smaller set of words the learner is genuinely, currently wrong on.
+  const strugglingWords = makePool(15, 4, "struggling");
+  for (const w of strugglingWords) {
+    const h = L.createEmptyWordHistory(w.word, w.level, w.word.length);
+    L.recordAttempt(h, { correct: false, timestamp: 1000, level: w.level, length: w.word.length });
+    historyStore[w.word.toLowerCase()] = h;
+  }
+  const newWords = makePool(2700, 6, "fresh");
+  const ratio = L.computeAutoBalanceRatioForPool(dueWords.concat(strugglingWords, newWords), historyStore, now);
+  assert.ok(
+    ratio.incorrect > ratio.learning,
+    `15 genuinely-wrong words should still outweigh 300 easy due-for-review words in review share (incorrect=${ratio.incorrect}, learning=${ratio.learning})`
+  );
 });
 
 /* ================= Manual "review this again" marking ================= */
