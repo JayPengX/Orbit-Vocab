@@ -663,11 +663,24 @@ async function refreshAudioCacheStatus() {
 
 let audioDownloadCancelled = false;
 let audioDownloadInProgress = false;
-// Kept modest - not for bandwidth reasons (each clip is only a few KB) but
-// so this doesn't monopolize the browser's limited same-origin connection
-// pool while a round might also be trying to play/preload audio at the
-// same time.
-const AUDIO_DOWNLOAD_CONCURRENCY = 6;
+// Each clip is only ~10 KB, so this download is latency-bound, not
+// bandwidth-bound: with only a handful of requests in flight at once, wall
+// time is dominated by (3,060 / concurrency) round trips, not by how much
+// data there actually is. A low concurrency here (this used to be 6, tuned
+// as if this were an HTTP/1.1-style "don't monopolize the connection pool"
+// concern) made a 30 MB download that should take a few seconds take
+// closer to a minute in practice - confirmed by benchmarking against a
+// simulated-latency HTTP/2 server (the same protocol GitHub Pages/Fastly
+// actually serves over): 6 concurrent requests at just 50ms/request took
+// ~31s for all 3,060 clips, because only 6 round trips are ever overlapped
+// at once. HTTP/2 multiplexes many concurrent streams over one connection
+// with no extra handshake cost per request, so there's no HTTP/1.1-style
+// "6 connections per origin" ceiling to respect here - raising this lets
+// the round trips overlap instead of queueing behind each other. Kept well
+// under a runaway number (hundreds/thousands) mainly so a slow/flaky
+// connection still fails individual requests promptly rather than piling
+// up simultaneous long-hanging ones.
+const AUDIO_DOWNLOAD_CONCURRENCY = 48;
 
 // Downloads and caches every word's clip that ISN'T already in Cache
 // Storage - already-cached words are skipped outright, no network hit at
@@ -675,7 +688,10 @@ const AUDIO_DOWNLOAD_CONCURRENCY = 6;
 // resuming a previously cancelled download, or topping up after new words
 // were added to the vocab list, both just fill in whatever's still
 // missing rather than redoing everything. `onProgress(done, total,
-// failed)` is called after every single clip finishes (success or not).
+// failed)` is called after every single clip finishes (success or not) -
+// callers should throttle their own UI updates from it (see the click
+// handler below) rather than writing to the DOM on every call, which at
+// this concurrency could itself become a bottleneck.
 async function downloadAllAudioForOffline(onProgress) {
   const cache = await getAudioCache();
   if (!cache) return { done: 0, total: 0, failed: 0, cancelled: false, unsupported: true };
@@ -690,14 +706,29 @@ async function downloadAllAudioForOffline(onProgress) {
   const total = toFetch.length;
   if (!total) return { done, total, failed, cancelled: false };
 
+  // If a Service Worker is already controlling this page, every one of
+  // these fetch() calls is ALSO being intercepted by sw.js's own fetch
+  // handler (see that file's cacheFirst) - which, on any successful
+  // response, already writes it into this exact same Cache Storage bucket
+  // (see AUDIO_CACHE_NAME's own comment on why the names match). Explicitly
+  // cache.put()-ing it again here would just be a second, redundant disk
+  // write for every single clip. Only do the explicit put ourselves when
+  // there's no controlling Service Worker to do it for us (e.g. the very
+  // first load right after install, before it's taken control) - the one
+  // case an intercepted fetch wouldn't get cached at all otherwise.
+  const swWillCacheIt = "serviceWorker" in navigator && !!navigator.serviceWorker.controller;
+
   const queue = toFetch.slice();
   async function worker() {
     while (queue.length && !audioDownloadCancelled) {
       const word = queue.shift();
       try {
         const res = await fetch(localAudioUrl(word));
-        if (res.ok) await cache.put(localAudioUrl(word), res);
-        else failed += 1;
+        if (res.ok) {
+          if (!swWillCacheIt) await cache.put(localAudioUrl(word), res);
+        } else {
+          failed += 1;
+        }
       } catch (e) {
         failed += 1;
       }
@@ -722,7 +753,18 @@ document.getElementById("audio-cache-download-btn").addEventListener("click", as
 
   const cache = await getAudioCache();
   const cachedBefore = cache ? await countCachedAudio(cache) : 0;
-  const result = await downloadAllAudioForOffline((done, _total, failed) => {
+  // At AUDIO_DOWNLOAD_CONCURRENCY's higher concurrency, onProgress can fire
+  // many times within a single frame - writing to the DOM on every single
+  // call would itself start competing with the download loop for main-
+  // thread time. Throttled to a plain, smooth-enough-to-watch cadence
+  // instead; the very last call (done === total) always gets through
+  // regardless, so the final count is never stale.
+  let lastUiUpdateAt = 0;
+  const UI_UPDATE_INTERVAL_MS = 150;
+  const result = await downloadAllAudioForOffline((done, total, failed) => {
+    const now = Date.now();
+    if (done < total && now - lastUiUpdateAt < UI_UPDATE_INTERVAL_MS) return;
+    lastUiUpdateAt = now;
     const totalDone = cachedBefore + done;
     setAudioCacheProgressFraction(VOCAB.length ? totalDone / VOCAB.length : 0);
     setAudioCacheStatusText(
