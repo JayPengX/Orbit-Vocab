@@ -293,21 +293,17 @@
       <div id="progress-levels"></div>
 
       <h2>🔄 跨裝置同步</h2>
-      <p class="hint">把學習紀錄同步到你的其他裝置。先按「建立新同步」，再到其他裝置輸入代碼與密碼「加入同步」。</p>
+      <p class="hint">把學習紀錄同步到你的其他裝置。先按「建立新同步」，再到其他裝置輸入密碼「加入同步」。</p>
 
       <div id="sync-setup-box">
         <div class="row actions">
           <button class="btn primary" id="sync-create-btn">🔗 建立新同步</button>
         </div>
         <details id="sync-join-fold">
-          <summary>已有同步代碼？加入同步</summary>
-          <div class="row">
-            <label for="sync-join-code">代碼</label>
-            <input type="text" id="sync-join-code" placeholder="例如 AB23CD45" maxlength="8" autocapitalize="characters" autocomplete="off" />
-          </div>
+          <summary>已有同步密碼？加入同步</summary>
           <div class="row">
             <label for="sync-join-passcode">密碼</label>
-            <input type="text" id="sync-join-passcode" placeholder="配對密碼" autocomplete="off" />
+            <input type="text" id="sync-join-passcode" placeholder="貼上同步密碼" autocomplete="off" />
           </div>
           <div class="row actions">
             <button class="btn primary" id="sync-join-btn">加入同步</button>
@@ -316,16 +312,13 @@
       </div>
 
       <div id="sync-created-codes" class="hidden sync-created-box">
-        <p class="hint danger-text">請先複製保存這組代碼與密碼——密碼之後不會再完整顯示第二次！</p>
-        <div class="row"><label>代碼</label><strong id="sync-created-code"></strong>
-          <button type="button" class="btn secondary small" id="sync-created-code-copy">複製</button></div>
+        <p class="hint danger-text">請先複製保存這組密碼——之後不會再完整顯示第二次！</p>
         <div class="row"><label>密碼</label><strong id="sync-created-passcode"></strong>
           <button type="button" class="btn secondary small" id="sync-created-passcode-copy">複製</button></div>
         <div class="row actions"><button class="btn primary" id="sync-ack-btn">已保存，關閉</button></div>
       </div>
 
       <div id="sync-active-box" class="hidden">
-        <div class="row"><label>代碼</label><strong id="sync-active-code"></strong></div>
         <div class="row">
           <label>密碼</label>
           <button type="button" class="btn secondary small" id="sync-passcode-toggle">顯示密碼</button>
