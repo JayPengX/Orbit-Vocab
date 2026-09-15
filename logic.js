@@ -29,27 +29,42 @@
     // buffer is, to keep storage bounded across thousands of words.
     maxRecentAttempts: 12,
 
-    // A word's "memorized vs. still learning" label is driven by a decayed
-    // Bayesian (Beta-Bernoulli) estimate of how likely you are to get it
-    // right - not a raw "N correct in a row" streak. Every attempt updates
-    // two running pseudo-counts, masteryAlpha (weight of evidence for
-    // "correct") and masteryBeta (weight of evidence for "incorrect") - see
-    // recordAttempt - by first shrinking the PREVIOUS counts toward 0 by
-    // masteryDecay, then adding 1 to whichever count matches this attempt's
-    // result. That gives two things a raw streak can't: (1) old evidence
-    // fades out smoothly instead of being remembered forever or wiped in
-    // one shot, and (2) a word with a long, strong track record survives
-    // ONE recent slip without being thrown all the way back to needing a
-    // fresh 2-in-a-row the way a brand new word would - a wrong answer still
-    // immediately reads as "incorrect" for that answer itself (see
-    // classifyState), but the very NEXT correct answer can restore
-    // "memorized" right away instead of requiring two more. This is what
-    // fixes the "the app can't seem to make up its mind about words I get
-    // right 55-70% of the time" problem: a raw 2-streak is at its most
-    // erratic exactly in that middle accuracy band (two-in-a-row is neither
-    // reliably close nor reliably far), while a smoothed, recency-weighted
-    // probability degrades gracefully instead of flipping on every other
-    // answer.
+    // A word is Memorized the moment its current correct streak reaches
+    // this many in a row - unconditional, exactly like the original design:
+    // 2 correct answers in a row mean this word is known, regardless of
+    // whatever happened further back in its history. Any single wrong
+    // answer resets the streak to 0 (and the word immediately reads as
+    // "incorrect" again). See classifyState - this is only ONE of its two
+    // paths to "memorized", not the only one; masteryDecay/
+    // masteryMasteredThreshold below are the other.
+    memorizedStreak: 2,
+
+    // The SECOND path to "memorized" (see classifyState): a decayed
+    // Bayesian (Beta-Bernoulli) estimate of how likely you are to get a
+    // word right, tracked alongside the raw streak above, not instead of
+    // it. Every attempt updates two running pseudo-counts, masteryAlpha
+    // (weight of evidence for "correct") and masteryBeta (weight of
+    // evidence for "incorrect") - see recordAttempt - by first shrinking
+    // the PREVIOUS counts toward 0 by masteryDecay, then adding 1 to
+    // whichever count matches this attempt's result. This exists
+    // specifically for the case the raw streak alone handles badly: a word
+    // with a long, strong track record survives ONE recent slip without
+    // being thrown all the way back to needing a fresh 2-in-a-row - a wrong
+    // answer still immediately reads as "incorrect" for that answer itself
+    // (see classifyState), but the very NEXT correct answer can restore
+    // "memorized" right away (via THIS path, even though the streak itself
+    // is only 1) instead of requiring two more.
+    //
+    // This is deliberately NOT a replacement for the streak check above -
+    // an earlier version of classifyState required EVERY path to memorized
+    // to clear this estimate, including a fresh 2-in-a-row, which meant a
+    // couple of old mistakes could keep a word that was JUST answered right
+    // twice in a row stuck on "learning" (the decayed estimate hadn't
+    // caught up yet) - flooding review with words that were, by any normal
+    // definition, already known. The streak path above is unconditional
+    // precisely so "2 in a row" always means Memorized, full stop; this
+    // path only ever ADDS a second, faster way to get there for an
+    // established word recovering from a single slip.
     masteryDecay: 0.85,
     // Where masteryAlpha/masteryBeta start before this word has any real
     // attempts. Deliberately flat/uninformative (50/50) rather than
@@ -739,17 +754,36 @@
 
   // Four states: "new" (never attempted - not one of the three tracked
   // states, just bookkeeping for the pool that hasn't been touched yet),
-  // "incorrect" (most recent answer was wrong), "learning" (correct, but
-  // the decayed mastery estimate hasn't cleared masteryMasteredThreshold
-  // yet), "memorized" (it has). Any single wrong answer immediately drops a
-  // word from "memorized" straight back to "incorrect" for that answer -
-  // the mastery estimate itself only takes a proportional hit (see
-  // CONFIG's own "masteryDecay" comment), which is what lets the NEXT
-  // correct answer restore "memorized" without needing two more.
+  // "incorrect" (most recent answer was wrong), "learning", "memorized".
+  // Reaching "memorized" has TWO independent paths, deliberately an OR, not
+  // a single gated check:
+  //   1. correctStreak >= memorizedStreak - unconditional, exactly like the
+  //      original design: 2 (or more) correct answers in a row mean this
+  //      word is known, full stop, regardless of anything further back in
+  //      its history. This is NOT gated behind the mastery estimate below -
+  //      a word with a couple of old mistakes still reaches Memorized the
+  //      moment its current streak clears the bar, same as a brand new
+  //      word. (An earlier version of this function required the DECAYED
+  //      mastery estimate to also clear its own threshold even when the
+  //      streak alone was already >= 2 - which meant a handful of old
+  //      misses could keep a genuinely-just-answered-right-twice word stuck
+  //      on "learning", flooding review with words that were, by any normal
+  //      definition, already known. That's what this path fixes.)
+  //   2. masteryMean(h) >= masteryMasteredThreshold - the decayed Bayesian
+  //      estimate (see CONFIG's own "masteryDecay" comment), which is what
+  //      lets a word with a LONG, strong track record recover "memorized"
+  //      on the very next correct answer after a single isolated slip
+  //      (streak only 1 at that point, but the estimate is still high)
+  //      instead of needing a fresh 2-in-a-row like a brand new word would.
+  // Any single wrong answer still immediately drops a word from "memorized"
+  // straight back to "incorrect" for that answer, whichever path got it
+  // there - the mastery estimate itself only takes a proportional hit (it
+  // doesn't reset to zero), which is exactly what makes path 2 possible.
   function classifyState(history) {
     const h = history || {};
     if (!h.attempts) return "new";
     if (h.lastResult === "incorrect") return "incorrect";
+    if ((h.correctStreak || 0) >= CONFIG.memorizedStreak) return "memorized";
     return masteryMean(h) >= CONFIG.masteryMasteredThreshold ? "memorized" : "learning";
   }
 

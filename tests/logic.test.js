@@ -1443,17 +1443,31 @@ test("classifyState: a word with a long, strong track record survives a single s
   );
 });
 
-test("classifyState: a word answered correctly ~60% of the time (the noisy middle band a raw 2-streak flails on) settles into 'learning' once enough mixed evidence has accumulated, rather than reading as confidently memorized", () => {
+test("classifyState: 2-3 fresh correct answers in a row are UNCONDITIONALLY memorized, even with a couple of mistakes earlier in the word's history (regression: the mastery-estimate path used to also gate this, so old mistakes could keep a just-answered-right-twice word stuck on 'learning')", () => {
+  const h = L.createEmptyWordHistory("recovering", 4, 10);
+  play(h, [{ correct: false }, { correct: false }]);
+  assert.equal(L.classifyState(h), "incorrect");
+
+  play(h, [{ correct: true }, { correct: true }]);
+  assert.equal(
+    L.classifyState(h),
+    "memorized",
+    "2 fresh correct answers in a row must be Memorized regardless of the 2 earlier misses - the streak path is unconditional, not gated behind the decayed mastery estimate"
+  );
+});
+
+test("classifyState: a word answered correctly ~55% of the time, NEVER two-in-a-row, settles into 'learning' via the mastery-estimate path rather than reading as confidently memorized", () => {
   const h = L.createEmptyWordHistory("middling", 4, 8);
-  // Deterministic 60% pattern (9/15), ending on a correct answer so the
-  // final classifyState reflects the mastery estimate rather than the
-  // "just missed it" incorrect branch. An early sub-sequence CAN still
-  // legitimately read as "memorized" for a beat (two-in-a-row from a fresh
-  // word is meant to, see the dedicated 2-streak test above) - what this
-  // test checks is that sustained ~60% inconsistency settles the estimate
-  // back down, not that it never crosses the bar even momentarily.
-  const pattern = [true, true, false, true, false, true, true, false, false, true, false, true, false, true, true];
+  // Deterministic ~55% pattern (9/16), alternating enough that
+  // correctStreak never reaches 2 (so classifyState's unconditional streak
+  // path - see CONFIG.memorizedStreak - never fires here; this test is
+  // specifically about the OTHER path, the decayed mastery estimate).
+  // Ends on a single correct (streak 1, not "incorrect") so the final
+  // classifyState reflects the mastery estimate rather than the "just
+  // missed it" incorrect branch.
+  const pattern = [true, true, false, true, false, true, false, true, false, true, false, true, false, true, false, true];
   for (const correct of pattern) play(h, [{ correct: correct }]);
+  assert.ok(h.correctStreak < L.CONFIG.memorizedStreak, "sanity check: this pattern must never let the streak path fire on its own");
   assert.equal(L.classifyState(h), "learning");
 });
 
