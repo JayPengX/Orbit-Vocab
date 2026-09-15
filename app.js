@@ -577,6 +577,171 @@ function loadAudioBuffer(word) {
   return promise;
 }
 
+/* ---------- Offline audio caching ----------
+   audioBufferCache above is only ever a per-load, in-memory Map (gone the
+   moment the tab reloads) - it makes REPLAYING a word within one session
+   instant, but does nothing for the underlying network dependency. The
+   thing that actually makes a word playable without the network AT ALL,
+   on any future visit, is the Service Worker's own Cache Storage entry for
+   its mp3 (see sw.js's cacheFirst) - but that only gets written the first
+   time a word is actually PLAYED, so a word nobody has practiced yet still
+   needs a real network round trip its very first time, which is exactly
+   what's slow/unreliable on a bad connection (see AUDIO_FETCH_TIMEOUT_MS's
+   own comment above for what happens when that round trip stalls).
+
+   This section adds an explicit, opt-in way to close that gap ahead of
+   time: fetch and cache EVERY word's clip up front (data/audio/ is only
+   ~30 MB total for all 3,060 words - see the Progress page's own hint
+   text), so playback stops depending on live network conditions at all,
+   not just for words already practiced. Reads and writes the exact same
+   Cache Storage bucket sw.js's own fetch handler uses (both stamped with
+   the identical APP_VERSION token by the deploy workflow - see that
+   file's own CACHE_NAME comment), so a word cached this way is
+   indistinguishable from one the Service Worker cached lazily during
+   normal play; either one is served instantly from Cache Storage on every
+   future request for that URL, network permitting or not. */
+
+const AUDIO_CACHE_NAME = `vocab-tool-cache-${APP_VERSION}`;
+// Real measured average from data/audio/*.mp3 - used only to turn a raw
+// clip count into a human-readable size estimate for the status text.
+const AUDIO_CLIP_AVG_KB = 9.8;
+
+async function getAudioCache() {
+  if (!("caches" in window)) return null;
+  try {
+    return await caches.open(AUDIO_CACHE_NAME);
+  } catch (e) {
+    return null;
+  }
+}
+
+// Counts how many of this cache's entries are audio clips specifically
+// (vs. the app-shell files sw.js also keeps in the same bucket - see its
+// own APP_SHELL) - one cache.keys() call rather than 3,060 individual
+// match() checks, so this stays cheap even run on every Progress view show.
+async function countCachedAudio(cache) {
+  const keys = await cache.keys();
+  let count = 0;
+  for (const req of keys) {
+    if (req.url.includes("/data/audio/")) count += 1;
+  }
+  return count;
+}
+
+function setAudioCacheStatusText(text) {
+  const el = document.getElementById("audio-cache-status");
+  if (el) el.textContent = text;
+}
+function setAudioCacheProgressFraction(fraction) {
+  const fill = document.getElementById("audio-cache-progress-fill");
+  if (fill) fill.style.width = `${Math.round(Math.max(0, Math.min(1, fraction)) * 100)}%`;
+}
+
+// Refreshes the status line/progress bar from whatever's ACTUALLY in Cache
+// Storage right now (never a remembered count) - called whenever the
+// Progress view is shown, and again once a download finishes or is
+// cancelled, so what's on screen always matches the real on-device state.
+async function refreshAudioCacheStatus() {
+  const downloadBtn = document.getElementById("audio-cache-download-btn");
+  const cache = await getAudioCache();
+  if (!cache) {
+    setAudioCacheStatusText("此瀏覽器不支援離線快取功能，發音仍會照常即時播放（需要網路）。");
+    if (downloadBtn) downloadBtn.disabled = true;
+    return;
+  }
+  if (!VOCAB.length) return; // vocab not loaded yet - init() will call this again once it is
+  const cachedCount = await countCachedAudio(cache);
+  setAudioCacheProgressFraction(cachedCount / VOCAB.length);
+  if (downloadBtn) downloadBtn.disabled = audioDownloadInProgress || cachedCount >= VOCAB.length;
+  if (cachedCount >= VOCAB.length) {
+    setAudioCacheStatusText(`已快取全部 ${VOCAB.length} 個單字的發音，離線也能正常播放。`);
+  } else {
+    const remainingMb = (((VOCAB.length - cachedCount) * AUDIO_CLIP_AVG_KB) / 1024).toFixed(1);
+    setAudioCacheStatusText(`已快取 ${cachedCount} / ${VOCAB.length} 個單字的發音，還剩約 ${remainingMb} MB 未下載。`);
+  }
+}
+
+let audioDownloadCancelled = false;
+let audioDownloadInProgress = false;
+// Kept modest - not for bandwidth reasons (each clip is only a few KB) but
+// so this doesn't monopolize the browser's limited same-origin connection
+// pool while a round might also be trying to play/preload audio at the
+// same time.
+const AUDIO_DOWNLOAD_CONCURRENCY = 6;
+
+// Downloads and caches every word's clip that ISN'T already in Cache
+// Storage - already-cached words are skipped outright, no network hit at
+// all for them, which is what makes this safe/cheap to re-run any time:
+// resuming a previously cancelled download, or topping up after new words
+// were added to the vocab list, both just fill in whatever's still
+// missing rather than redoing everything. `onProgress(done, total,
+// failed)` is called after every single clip finishes (success or not).
+async function downloadAllAudioForOffline(onProgress) {
+  const cache = await getAudioCache();
+  if (!cache) return { done: 0, total: 0, failed: 0, cancelled: false, unsupported: true };
+
+  const alreadyCachedUrls = new Set((await cache.keys()).map((req) => req.url));
+  const toFetch = VOCAB.map((w) => w.word).filter(
+    (word) => !alreadyCachedUrls.has(new URL(localAudioUrl(word), location.href).href)
+  );
+
+  let done = 0;
+  let failed = 0;
+  const total = toFetch.length;
+  if (!total) return { done, total, failed, cancelled: false };
+
+  const queue = toFetch.slice();
+  async function worker() {
+    while (queue.length && !audioDownloadCancelled) {
+      const word = queue.shift();
+      try {
+        const res = await fetch(localAudioUrl(word));
+        if (res.ok) await cache.put(localAudioUrl(word), res);
+        else failed += 1;
+      } catch (e) {
+        failed += 1;
+      }
+      done += 1;
+      onProgress(done, total, failed);
+    }
+  }
+  const workers = [];
+  for (let i = 0; i < AUDIO_DOWNLOAD_CONCURRENCY; i++) workers.push(worker());
+  await Promise.all(workers);
+  return { done, total, failed, cancelled: audioDownloadCancelled };
+}
+
+document.getElementById("audio-cache-download-btn").addEventListener("click", async () => {
+  if (audioDownloadInProgress) return;
+  audioDownloadInProgress = true;
+  audioDownloadCancelled = false;
+  const downloadBtn = document.getElementById("audio-cache-download-btn");
+  const cancelBtn = document.getElementById("audio-cache-cancel-btn");
+  downloadBtn.disabled = true;
+  cancelBtn.classList.remove("hidden");
+
+  const cache = await getAudioCache();
+  const cachedBefore = cache ? await countCachedAudio(cache) : 0;
+  const result = await downloadAllAudioForOffline((done, _total, failed) => {
+    const totalDone = cachedBefore + done;
+    setAudioCacheProgressFraction(VOCAB.length ? totalDone / VOCAB.length : 0);
+    setAudioCacheStatusText(
+      `下載中… ${totalDone} / ${VOCAB.length}${failed ? `（其中 ${failed} 個下載失敗，稍後可重新按下載鍵重試）` : ""}`
+    );
+  });
+
+  cancelBtn.classList.add("hidden");
+  audioDownloadInProgress = false;
+  await refreshAudioCacheStatus();
+  if (result.cancelled) {
+    setAudioCacheStatusText(`已取消下載（這次新完成了 ${result.done} / ${result.total} 個，已快取的部分不會遺失，可以之後再繼續）。`);
+  }
+});
+
+document.getElementById("audio-cache-cancel-btn").addEventListener("click", () => {
+  audioDownloadCancelled = true;
+});
+
 // Each call gets its own id, checked again once its buffer is ready -
 // without this, two speak() calls close together (next word shown right
 // after a slow replay tap, or vice versa) could resolve out of order: the
@@ -2100,6 +2265,7 @@ function formatPercent(x) {
 
 function renderProgress() {
   const summary = Logic.computeProgressSummary(VOCAB, progressStore);
+  refreshAudioCacheStatus();
 
   document.getElementById("progress-grid").innerHTML = `
     <div class="stat-box"><span class="num">${summary.totalWords}</span><span class="label">總單字數</span></div>
@@ -2447,6 +2613,10 @@ async function init() {
   // is already correct and waiting the moment the tab becomes visible, on
   // the very first click, not the next one.
   renderReviewList();
+  // Same "don't wait for the tab to be clicked" reasoning as renderReviewList
+  // above - lets the download button/status reflect reality (and become
+  // clickable) the moment Progress is opened, not one render late.
+  refreshAudioCacheStatus();
 
   if (window.speechSynthesis) {
     refreshVoices();
