@@ -187,8 +187,9 @@
   <!-- REVIEW LIST (browsable Learning / Incorrect words) - always the
        searchable/sortable/paginated list; 卡片複習模式 (see app.js's Review
        List section) is a separate dedicated mode entered via the launch
-       panel below, not a view mode toggled within this tab, so coming back
-       to 複習 always lands on this list, never mid-flashcard. -->
+       panel right at the top of this tab (above the list, not a button
+       buried below it), not a view mode toggled within this tab, so coming
+       back to 複習 always lands on this list, never mid-flashcard. -->
   <section id="view-reviewlist" class="view">
     <div class="card">
       <h2>複習</h2>
@@ -202,20 +203,10 @@
       </div>
     </div>
 
-    <!-- LIST VIEW -->
-    <div class="card" id="reviewlist-list-panel">
-      <p class="hint" id="reviewlist-list-hint"></p>
-      <div class="row">
-        <label for="reviewlist-sort">排序</label>
-        <select id="reviewlist-sort"></select>
-      </div>
-      <div id="reviewlist-items"></div>
-      <div id="reviewlist-pager"></div>
-    </div>
-
     <!-- FLASHCARD MODE LAUNCH: pick which deck (答錯待複習／學習中) and how
-         many words (minimum 20), then enter the dedicated 卡片複習模式 view
-         below. -->
+         many words (minimum 20), then enter the dedicated 卡片複習模式 view.
+         Placed right at the top of 複習, directly under the header, so it's
+         immediately visible rather than a button scrolled past the list. -->
     <div class="card" id="flashcard-launch-panel">
       <h2>🎴 卡片複習模式</h2>
       <p class="hint">選擇要複習的單字集合與數量，開始後會進入專屬的複習畫面，可以像測驗一樣中途離開。</p>
@@ -231,6 +222,17 @@
       <div class="row actions">
         <button type="button" class="btn primary" id="flashcard-launch-btn">🎴 開始卡片複習模式</button>
       </div>
+    </div>
+
+    <!-- LIST VIEW -->
+    <div class="card" id="reviewlist-list-panel">
+      <p class="hint" id="reviewlist-list-hint"></p>
+      <div class="row">
+        <label for="reviewlist-sort">排序</label>
+        <select id="reviewlist-sort"></select>
+      </div>
+      <div id="reviewlist-items"></div>
+      <div id="reviewlist-pager"></div>
     </div>
   </section>
 

@@ -250,6 +250,131 @@ test("computeSelectionWeight gives a word with a higher OWN empirical error rate
   assert.ok(oftenWrong > rarelyWrong, "a word this user actually gets wrong most of the time should outweigh one they rarely miss");
 });
 
+/* ================= computeSelectionWeight's category-direction split: new words favor
+   high predicted risk (surface likely-to-be-missed words early), incorrect/learning
+   words favor LOW predicted risk (clear near-mastered backlog words fastest) ================= */
+
+test("computeSelectionWeight with category 'new' (or omitted) gives a higher-risk word a HIGHER weight", () => {
+  const now = 1000000;
+  const models = { difficultyBaseline: { predict: (word) => (word === "hard" ? 0.9 : 0.1) }, interferenceModel: null, responseTimeBaseline: null };
+  const hard = { word: "hard", level: 4 };
+  const easy = { word: "easy", level: 4 };
+  const weightHardOmitted = L.computeSelectionWeight(hard, null, models, now);
+  const weightEasyOmitted = L.computeSelectionWeight(easy, null, models, now);
+  assert.ok(weightHardOmitted > weightEasyOmitted, "omitted category should default to favoring the harder word (new-word behavior)");
+
+  const weightHardNew = L.computeSelectionWeight(hard, null, models, now, "new");
+  const weightEasyNew = L.computeSelectionWeight(easy, null, models, now, "new");
+  assert.ok(weightHardNew > weightEasyNew, "category 'new' should favor the harder (higher-risk) word");
+});
+
+test("computeSelectionWeight with category 'incorrect' or 'learning' gives a higher-risk word a LOWER weight - the opposite direction from 'new'", () => {
+  const now = 1000000;
+  const models = { difficultyBaseline: { predict: (word) => (word === "hard" ? 0.9 : 0.1) }, interferenceModel: null, responseTimeBaseline: null };
+  const hard = { word: "hard", level: 4 };
+  const easy = { word: "easy", level: 4 };
+
+  for (const category of ["incorrect", "learning"]) {
+    const weightHard = L.computeSelectionWeight(hard, null, models, now, category);
+    const weightEasy = L.computeSelectionWeight(easy, null, models, now, category);
+    assert.ok(
+      weightEasy > weightHard,
+      `category '${category}' should favor the EASIER (lower-risk) word, to clear it off the backlog first (easy=${weightEasy}, hard=${weightHard})`
+    );
+  }
+});
+
+test("computeSelectionWeight's category direction is purely about which way risk points - the response-time and recency adjustments still apply identically regardless of category", () => {
+  const now = 1000000;
+  const models = { difficultyBaseline: { predict: () => 0.5 }, interferenceModel: null, responseTimeBaseline: { predict: () => 1000 } };
+  const w = { word: "example", level: 4 };
+  const slowHistory = { avgCorrectResponseMs: 2000, lastSeen: now - 5 * 24 * 60 * 60 * 1000 };
+  const fastHistory = { avgCorrectResponseMs: 500, lastSeen: now - 5 * 24 * 60 * 60 * 1000 };
+  for (const category of ["incorrect", "learning"]) {
+    const slow = L.computeSelectionWeight(w, slowHistory, models, now, category);
+    const fast = L.computeSelectionWeight(w, fastHistory, models, now, category);
+    assert.ok(slow > fast, `even with the review-direction risk flip, a slower-than-expected word should still weigh more under category '${category}'`);
+  }
+});
+
+/* ================= computeLevelBalanceModel: keeps a multi-level auto-mode round from
+   letting one selected level dominate just because it's been practiced more/less ================= */
+
+test("computeLevelBalanceModel returns null for a single-level pool - nothing to balance", () => {
+  const pool = makePool(20, 4, "w");
+  assert.equal(L.computeLevelBalanceModel(pool, {}), null);
+});
+
+test("computeLevelBalanceModel returns null (a no-op) when there is no attempt data anywhere yet, even across levels", () => {
+  const pool = makePool(10, 4, "a").concat(makePool(10, 6, "b"));
+  const model = L.computeLevelBalanceModel(pool, {});
+  assert.ok(model, "model should still exist (>1 level) even with no data");
+  assert.equal(model.weightOf(4), 1);
+  assert.equal(model.weightOf(6), 1);
+});
+
+test("computeLevelBalanceModel boosts a level that's been attempted far LESS than the others, and dampens one attempted far MORE", () => {
+  const heavyLevel = makePool(20, 4, "heavy");
+  const lightLevel = makePool(20, 6, "light");
+  const pool = heavyLevel.concat(lightLevel);
+  const historyStore = {};
+  for (const w of heavyLevel) historyStore[w.word] = { attempts: 20 };
+  for (const w of lightLevel) historyStore[w.word] = { attempts: 1 };
+
+  const model = L.computeLevelBalanceModel(pool, historyStore);
+  assert.ok(model.weightOf(4) < 1, `heavily-practiced level 4 should be dampened (got ${model.weightOf(4)})`);
+  assert.ok(model.weightOf(6) > 1, `barely-practiced level 6 should be boosted (got ${model.weightOf(6)})`);
+  assert.ok(model.weightOf(4) >= L.CONFIG.autoLevelBalanceWeightMin);
+  assert.ok(model.weightOf(6) <= L.CONFIG.autoLevelBalanceWeightMax);
+});
+
+test("selectQuestions with levelBalance:true noticeably shifts the level mix toward an under-practiced level vs levelBalance omitted", () => {
+  // Both pools' words are all in the SAME state ("learning": some attempts,
+  // never wrong, streak not yet at Memorized) and all correct so far (0%
+  // error rate everywhere - no difficulty-risk differences to confound the
+  // result), differing ONLY in how many times each has been attempted:
+  // level 4 heavily (30), level 6 barely (1) - exactly the per-level
+  // exposure imbalance computeLevelBalanceModel measures. "heavy"/"light"
+  // are the same length, so word-length-based difficulty effects wash out
+  // evenly between the two levels too.
+  const heavyLevel = makePool(150, 4, "heavy");
+  const lightLevel = makePool(150, 6, "light");
+  const pool = heavyLevel.concat(lightLevel);
+  const historyStore = {};
+  const learningHistory = (attempts) => ({
+    attempts: attempts, correct: attempts, incorrect: 0, correctStreak: 0,
+    lastResult: "correct", lastSeen: 0, lastReviewedAt: 0, markedAt: 0,
+  });
+  for (const w of heavyLevel) historyStore[w.word.toLowerCase()] = learningHistory(30);
+  for (const w of lightLevel) historyStore[w.word.toLowerCase()] = learningHistory(1);
+
+  function level6Share(levelBalance) {
+    let level6Count = 0;
+    let total = 0;
+    const trials = 200;
+    for (let i = 0; i < trials; i++) {
+      const selection = L.selectQuestions({
+        pool: pool,
+        historyStore: historyStore,
+        size: 60,
+        ratio: { new: 0, incorrect: 0, learning: 1 },
+        random: seededRandom(1000 + i),
+        levelBalance: levelBalance,
+      });
+      total += selection.length;
+      level6Count += selection.filter((w) => w.level === 6).length;
+    }
+    return level6Count / total;
+  }
+
+  const shareWithout = level6Share(false);
+  const shareWith = level6Share(true);
+  assert.ok(
+    shareWith > shareWithout + 0.05,
+    `level balance should shift a meaningfully larger share toward the under-practiced level 6 (without=${shareWithout}, with=${shareWith})`
+  );
+});
+
 /* ================= Length-aware response time baseline (fixes long words always reading as "slow") ================= */
 
 test("computeResponseTimeBaseline is null with no timing data at all", () => {
@@ -568,6 +693,23 @@ test("computeAutoBalanceRatio never goes to a flat equal three-way split - revie
 test("computeAutoBalanceRatio leans the review share toward incorrect over learning at equal counts", () => {
   const ratio = L.computeAutoBalanceRatio({ new: 100, incorrect: 10, learning: 10 });
   assert.ok(ratio.incorrect > ratio.learning, "still-wrong words should get more of the review share than almost-there words");
+});
+
+test("computeAutoBalanceRatio at a fully saturated backlog approaches CONFIG.autoBalanceMaxReviewShare, not the old fixed 75% ceiling", () => {
+  const ratio = L.computeAutoBalanceRatio({ new: 500, incorrect: 400, learning: 200 }); // backlog 600 >> autoBalanceBacklogSaturation (40) -> fully saturated
+  assert.ok(
+    Math.abs(ratio.incorrect + ratio.learning - L.CONFIG.autoBalanceMaxReviewShare) < 1e-9,
+    `a fully saturated backlog should hit exactly the configured ceiling (${L.CONFIG.autoBalanceMaxReviewShare}), got ${ratio.incorrect + ratio.learning}`
+  );
+  assert.ok(ratio.new > 0, "some new-word share should always remain when new words are still available, however small");
+  assert.ok(ratio.new < 0.25, "a saturated backlog should no longer be held back by anything resembling the old fixed 25% new-word floor");
+});
+
+test("computeAutoBalanceRatio at a tiny backlog against a huge new-word pool hits the configured floor, not more", () => {
+  const ratio = L.computeAutoBalanceRatio({ new: 1000, incorrect: 1, learning: 0 }); // backlog 1, minimal pressure
+  const reviewShare = ratio.incorrect + ratio.learning;
+  assert.ok(reviewShare >= L.CONFIG.autoBalanceMinReviewShare - 1e-9, `review share should never drop below the configured floor (got ${reviewShare})`);
+  assert.ok(reviewShare < L.CONFIG.autoBalanceMinReviewShare + 0.05, `a single-word backlog should sit right at the floor, not meaningfully above it (got ${reviewShare})`);
 });
 
 test("computeAutoBalanceRatio's three shares always sum to 1 across a range of counts", () => {
