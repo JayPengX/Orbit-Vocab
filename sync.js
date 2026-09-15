@@ -14,10 +14,16 @@
 // manager device to many read-only viewer devices), this app's sync has no
 // such broadcast use case: a pairing always belongs to ONE learner syncing
 // their own progress across their own devices, so there is only ever one
-// role. Every device holding the sync code AND its passcode can both read
-// and write - the Worker requires the passcode for reads here too (unlike
-// Orbit's open reads), since there is no legitimate "read-only" device to
-// keep that door open for, and this is someone's personal learning record.
+// role. There's also nothing here for a separate, less-sensitive "public
+// code" to protect the way Orbit's own sync code does - every operation on
+// this app's sync (including plain reads) already needs the real secret
+// (see the Worker's VOCAB_SYNC_APP), so a second identifier alongside it
+// would just be one more string to type, copy, and lose, for no extra
+// security. A single, longer passcode (see PASSCODE_KEY) is both this
+// pairing's identifier and its only credential - the Worker derives its own
+// server-side lookup key from it (see that repo's orbit-worker.js), never
+// storing or exposing anything the passcode itself doesn't already prove
+// you know.
 //
 // Loaded as a plain <script> (attaches everything to `window.VocabSync`),
 // same as logic.js/app.js - no bundler here, so the proxy URL below is a
@@ -28,9 +34,15 @@
 // that build step - see isSyncProxyConfigured() below.
 const VOCAB_SYNC_PROXY_URL = "__VOCAB_SYNC_PROXY_URL__";
 
-const CODE_KEY = "vocab_sync_code";
+// Both this pairing's identifier and its only credential - see the
+// file-level comment above on why there's no separate "code" any more.
 const PASSCODE_KEY = "vocab_sync_passcode";
 const LAST_UPDATE_KEY = "vocab_sync_last_update";
+// Left over from the earlier two-secret (code + passcode) pairing design -
+// cleared opportunistically below (see clearSyncPairing) so a device that
+// paired under that design doesn't leave a stale, now-meaningless value
+// sitting in localStorage forever.
+const LEGACY_CODE_KEY = "vocab_sync_code";
 // A one-shot safety net for the one genuinely destructive moment in this
 // feature: joining an existing sync immediately replaces this device's
 // local progress with whatever the shared document holds (see
@@ -83,24 +95,20 @@ function isSyncProxyConfigured() {
   // own checkForUpdate() already uses for __BUILD_VERSION__.
   return !!VOCAB_SYNC_PROXY_URL && !VOCAB_SYNC_PROXY_URL.startsWith("__");
 }
-function getSyncCode() {
-  return readLocal(CODE_KEY).trim();
-}
 function getSyncPasscode() {
   return readLocal(PASSCODE_KEY).trim();
 }
 function isSyncConfigured() {
-  return !!(getSyncCode() && getSyncPasscode());
+  return !!getSyncPasscode();
 }
-function setSyncPairing(code, passcode) {
-  writeLocal(CODE_KEY, String(code || "").trim().toUpperCase());
+function setSyncPairing(passcode) {
   writeLocal(PASSCODE_KEY, String(passcode || "").trim());
   writeLocal(LAST_UPDATE_KEY, "");
 }
 function clearSyncPairing() {
-  writeLocal(CODE_KEY, "");
   writeLocal(PASSCODE_KEY, "");
   writeLocal(LAST_UPDATE_KEY, "");
+  writeLocal(LEGACY_CODE_KEY, "");
 }
 
 /* ---------- Compact binary payload encoding (gzip + base64) ----------
@@ -342,7 +350,7 @@ function buildSyncSnapshotData() {
 
 // ---- Rate-limit backoff ----
 // The Worker this app piggybacks on (see the file-level comment) enforces
-// its own per-code rate limit and answers a too-frequent request with a
+// its own per-IP rate limit and answers a too-frequent request with a
 // plain HTTP 429 - previously that just surfaced as one failed sync with no
 // lasting effect, so the very next trigger (another answer, a tab
 // refocus, the next FORCE_SYNC_EVERY_N_ANSWERS-driven push) immediately
@@ -369,9 +377,10 @@ function clearRateLimitBackoff() {
   rateLimitBackoffUntil = 0;
 }
 
-function proxyUrl(code, extraParams) {
-  const params = new URLSearchParams(Object.assign({ code: code }, extraParams || {}));
-  return `${VOCAB_SYNC_PROXY_URL}?${params.toString()}`;
+// The passcode is the only thing every request needs to identify itself by
+// now - see the file-level comment on why there's no separate code param.
+function proxyUrl(passcode) {
+  return `${VOCAB_SYNC_PROXY_URL}?${new URLSearchParams({ passcode: passcode }).toString()}`;
 }
 async function proxyErrorMessage(response) {
   if (response.status === 429) {
@@ -385,8 +394,8 @@ async function proxyErrorMessage(response) {
 // This app's `/vocab-sync` route always needs the passcode to read too
 // (see the top-of-file comment on why) - unlike Orbit's own /sync, there
 // is no passcode-less "just checking role" call here.
-async function fetchSyncDoc(code, passcode) {
-  const response = await fetch(proxyUrl(code, { passcode: passcode || "" }));
+async function fetchSyncDoc(passcode) {
+  const response = await fetch(proxyUrl(passcode));
   if (response.status === 400) return { ok: true, exists: false, updateTime: "", payload: "" };
   if (!response.ok) return { ok: false, error: await proxyErrorMessage(response) };
   clearRateLimitBackoff();
@@ -404,17 +413,20 @@ async function createSyncDoc(payload) {
     if (!response.ok) return { ok: false, error: await proxyErrorMessage(response) };
     clearRateLimitBackoff();
     const data = await response.json();
-    return { ok: true, code: data.code, passcode: data.managerPasscode, updateTime: data.updateTime || "" };
+    return { ok: true, passcode: data.passcode, updateTime: data.updateTime || "" };
   } catch (error) {
     return { ok: false, error: `建立同步失敗：${error.message || error}` };
   }
 }
 
-async function writeSyncDoc(code, payload, passcode) {
-  const response = await fetch(proxyUrl(code), {
+// No separate passcode in the body any more - the query string's own
+// `passcode` (see proxyUrl) already both identifies and authorizes this
+// write, the same way it does for a read.
+async function writeSyncDoc(passcode, payload) {
+  const response = await fetch(proxyUrl(passcode), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ payload: payload, passcode: passcode }),
+    body: JSON.stringify({ payload: payload }),
   });
   if (!response.ok) return { ok: false, error: await proxyErrorMessage(response) };
   clearRateLimitBackoff();
@@ -422,8 +434,8 @@ async function writeSyncDoc(code, payload, passcode) {
   return { ok: true, updateTime: doc.updateTime || "" };
 }
 
-async function deleteSyncDoc(code, passcode) {
-  const response = await fetch(proxyUrl(code, { passcode: passcode }), { method: "DELETE" });
+async function deleteSyncDoc(passcode) {
+  const response = await fetch(proxyUrl(passcode), { method: "DELETE" });
   if (!response.ok) return { ok: false, error: await proxyErrorMessage(response) };
   clearRateLimitBackoff();
   return { ok: true };
@@ -477,14 +489,22 @@ function setSyncStatus(text, isError) {
 // need one (force-pushing a deliberate reset over the server) is handled
 // by unlinking instead (see unlinkAfterReset), not by overwriting.
 async function pushSnapshot() {
-  const code = getSyncCode();
   const passcode = getSyncPasscode();
-  if (!isSyncProxyConfigured() || !code || !passcode) return { ok: false, error: "尚未設定同步。" };
+  if (!isSyncProxyConfigured() || !passcode) return { ok: false, error: "尚未設定同步。" };
   try {
     const localSnapshot = buildSyncSnapshotData();
-    const doc = await fetchSyncDoc(code, passcode);
+    const doc = await fetchSyncDoc(passcode);
     if (!doc.ok) throw new Error(doc.error);
-    if (doc.exists && doc.payload) {
+    if (!doc.exists) {
+      // This device's own stored passcode already proved it worked once
+      // (create/join both require the doc to exist first) - `exists:false`
+      // turning up here means the sync was deleted from elsewhere (see
+      // vocabSyncDeleteForEveryone), not a malformed/never-valid passcode.
+      // Handled by the caller (see handleRemoteSyncDeletion) rather than
+      // here, so this function's own job stays "push, or explain why not".
+      return { ok: true, pushed: false, remoteDeleted: true };
+    }
+    if (doc.payload) {
       const remote = await decodeSyncPayload(doc.payload);
       const remoteTotal = typeof remote.totalAttempts === "number" ? remote.totalAttempts : 0;
       if (remoteTotal > localSnapshot.totalAttempts) {
@@ -506,7 +526,7 @@ async function pushSnapshot() {
       }
     }
     const payload = await encodeSyncPayload(localSnapshot);
-    const result = await writeSyncDoc(code, payload, passcode);
+    const result = await writeSyncDoc(passcode, payload);
     if (!result.ok) throw new Error(result.error);
     writeLocal(LAST_UPDATE_KEY, result.updateTime);
     dirty = false;
@@ -518,11 +538,10 @@ async function pushSnapshot() {
 
 async function pullSnapshot(opts) {
   const force = !!(opts && opts.force);
-  const code = getSyncCode();
   const passcode = getSyncPasscode();
-  if (!isSyncProxyConfigured() || !code || !passcode) return { ok: false, error: "尚未設定同步。" };
+  if (!isSyncProxyConfigured() || !passcode) return { ok: false, error: "尚未設定同步。" };
   try {
-    const doc = await fetchSyncDoc(code, passcode);
+    const doc = await fetchSyncDoc(passcode);
     if (!doc.ok) throw new Error(doc.error);
     if (!doc.exists) return { ok: true, applied: false, exists: false };
     if (!doc.payload) return { ok: true, applied: false, exists: true };
@@ -583,6 +602,10 @@ async function runSyncTick() {
   if (dirty || !hasSyncedSinceLoad) {
     const result = await pushSnapshot();
     hasSyncedSinceLoad = true;
+    if (result.ok && result.remoteDeleted) {
+      handleRemoteSyncDeletion();
+      return { ok: true, changed: false };
+    }
     if (!result.ok) {
       setSyncStatus(result.error, true);
     } else if (result.pulledInstead) {
@@ -595,6 +618,10 @@ async function runSyncTick() {
     return { ok: result.ok, changed: !!result.pulledInstead };
   }
   const result = await pullSnapshot();
+  if (result.ok && result.exists === false) {
+    handleRemoteSyncDeletion();
+    return { ok: true, changed: false };
+  }
   if (result.ok && result.applied) {
     setSyncStatus(`已從其他裝置更新學習紀錄（${new Date().toLocaleTimeString("zh-TW")}）`);
   } else if (!result.ok) {
@@ -778,7 +805,7 @@ async function copyTextWithFeedback(text, button) {
 // full right after creation, and losing it before copying it down just
 // means falling back to the "顯示密碼" reveal in the active-sync box
 // instead of losing anything for good.
-let pendingCreatedCodes = null;
+let pendingCreatedPasscode = null;
 
 function renderSyncPanel() {
   const setupBox = document.getElementById("sync-setup-box");
@@ -793,12 +820,11 @@ function renderSyncPanel() {
     return;
   }
 
-  createdBox.classList.toggle("hidden", !pendingCreatedCodes);
-  if (pendingCreatedCodes) {
+  createdBox.classList.toggle("hidden", !pendingCreatedPasscode);
+  if (pendingCreatedPasscode) {
     setupBox.classList.add("hidden");
     activeBox.classList.add("hidden");
-    document.getElementById("sync-created-code").textContent = pendingCreatedCodes.code;
-    document.getElementById("sync-created-passcode").textContent = pendingCreatedCodes.passcode;
+    document.getElementById("sync-created-passcode").textContent = pendingCreatedPasscode;
     return;
   }
 
@@ -806,7 +832,6 @@ function renderSyncPanel() {
   setupBox.classList.toggle("hidden", configured);
   activeBox.classList.toggle("hidden", !configured);
   if (configured) {
-    document.getElementById("sync-active-code").textContent = getSyncCode();
     const valueEl = document.getElementById("sync-passcode-value");
     const toggleBtn = document.getElementById("sync-passcode-toggle");
     if (valueEl) {
@@ -827,8 +852,8 @@ async function vocabSyncCreate() {
     return;
   }
   const confirmed = await window.VocabUI.confirm(
-    "建立新同步會產生一組新的同步代碼與密碼，用來在你自己的其他裝置之間同步學習紀錄。\n\n" +
-      "已經有代碼的話請改用「加入同步」。要繼續嗎？"
+    "建立新同步會產生一組新的同步密碼，用來在你自己的其他裝置之間同步學習紀錄。\n\n" +
+      "已經有密碼的話請改用「加入同步」。要繼續嗎？"
   );
   if (!confirmed) return;
   withButtonDisabled("sync-create-btn", async () => {
@@ -839,14 +864,14 @@ async function vocabSyncCreate() {
       setSyncStatus(result.error, true);
       return;
     }
-    setSyncPairing(result.code, result.passcode);
+    setSyncPairing(result.passcode);
     writeLocal(LAST_UPDATE_KEY, result.updateTime);
     dirty = false;
     // This device just established the server's baseline itself (there
     // was nothing to reconcile with - the document didn't exist a moment
     // ago), same reasoning as vocabSyncJoin's own applied pull below.
     hasSyncedSinceLoad = true;
-    pendingCreatedCodes = { code: result.code, passcode: result.passcode };
+    pendingCreatedPasscode = result.passcode;
     setSyncStatus("");
     renderSyncPanel();
     startSyncLoopIfConfigured();
@@ -862,28 +887,26 @@ function vocabSyncJoin() {
     setSyncStatus("目前沒有網路連線，無法加入同步。", true);
     return;
   }
-  const codeInput = document.getElementById("sync-join-code");
   const passcodeInput = document.getElementById("sync-join-passcode");
-  const code = (codeInput?.value || "").trim().toUpperCase();
   const passcode = (passcodeInput?.value || "").trim();
-  if (!code || !passcode) {
-    setSyncStatus("請輸入同步代碼與密碼。", true);
+  if (!passcode) {
+    setSyncStatus("請輸入同步密碼。", true);
     return;
   }
 
   withButtonDisabled("sync-join-btn", async () => {
-    setSyncStatus("正在檢查配對代碼…");
-    const doc = await fetchSyncDoc(code, passcode);
+    setSyncStatus("正在檢查同步密碼…");
+    const doc = await fetchSyncDoc(passcode);
     if (!doc.ok) {
       setSyncStatus(doc.error, true);
       return;
     }
     if (!doc.exists) {
-      setSyncStatus("找不到這組配對代碼，或密碼不正確，請確認後再試一次。", true);
+      setSyncStatus("找不到這組同步密碼，請確認後再試一次。", true);
       return;
     }
     const confirmed = await window.VocabUI.confirm(
-      "加入同步會立刻用該代碼下的學習紀錄取代這台裝置目前的紀錄。\n\n" +
+      "加入同步會立刻用該密碼下的學習紀錄取代這台裝置目前的紀錄。\n\n" +
         "這台裝置目前的紀錄會先備份起來，解除同步後可以選擇找回，但要繼續嗎？"
     );
     if (!confirmed) {
@@ -898,14 +921,13 @@ function vocabSyncJoin() {
     } else {
       window.VocabState.applySyncedSnapshot({}, null);
     }
-    setSyncPairing(code, passcode);
+    setSyncPairing(passcode);
     writeLocal(LAST_UPDATE_KEY, doc.updateTime);
     dirty = false;
     // This join just fetched-and-applied the server's current data, which
     // IS reconciling with it - the first automatic tick afterward doesn't
     // need to force another pull first (see hasSyncedSinceLoad).
     hasSyncedSinceLoad = true;
-    if (codeInput) codeInput.value = "";
     if (passcodeInput) passcodeInput.value = "";
     setSyncStatus("已加入同步。");
     renderSyncPanel();
@@ -938,6 +960,10 @@ function vocabSyncNow() {
     if (dirty || !hasSyncedSinceLoad) {
       const result = await pushSnapshot();
       hasSyncedSinceLoad = true;
+      if (result.ok && result.remoteDeleted) {
+        handleRemoteSyncDeletion();
+        return;
+      }
       if (!result.ok) {
         setSyncStatus(result.error, true);
       } else if (result.pulledInstead) {
@@ -950,6 +976,10 @@ function vocabSyncNow() {
       return;
     }
     const result = await pullSnapshot({ force: true });
+    if (result.ok && result.exists === false) {
+      handleRemoteSyncDeletion();
+      return;
+    }
     if (!result.ok) setSyncStatus(result.error, true);
     else setSyncStatus(result.applied ? "已更新為最新的學習紀錄。" : "已是最新。");
   });
@@ -992,6 +1022,19 @@ function performUnlink(statusMessage) {
   setSyncStatus(statusMessage);
 }
 
+// A device's own stored passcode reaching this point already proved it
+// worked at least once (create/join both require the doc to exist first) -
+// exists:false (see pushSnapshot's remoteDeleted and pullSnapshot's own
+// exists field) turning up on a routine, already-configured tick means the
+// sync was deleted from elsewhere (see vocabSyncDeleteForEveryone), not a
+// malformed/never-valid passcode reaching this far. Falls back to
+// local-only exactly like a manual "解除同步" would (see performUnlink),
+// plus the same backup-restore offer every other unlink path gives.
+function handleRemoteSyncDeletion() {
+  performUnlink("同步已被刪除，這台裝置已自動解除同步（本機學習紀錄不受影響）。");
+  promptRestoreBackupIfAny();
+}
+
 async function vocabSyncUnlink() {
   const confirmed = await window.VocabUI.confirm(
     "解除同步後這台裝置會變回只在本機儲存進度，之後可用同一組代碼重新加入。其他裝置不受影響。要繼續嗎？"
@@ -1020,21 +1063,20 @@ function unlinkAfterReset() {
 }
 
 async function vocabSyncDeleteForEveryone() {
-  const code = getSyncCode();
   const passcode = getSyncPasscode();
-  if (!code || !passcode) return;
+  if (!passcode) return;
   if (!navigator.onLine) {
     setSyncStatus("目前沒有網路連線，無法刪除同步。", true);
     return;
   }
   const confirmed = await window.VocabUI.confirm(
-    `確定要整個刪除這組同步（代碼 ${code}）嗎？\n\n所有使用這組代碼的裝置都會斷開連結，此動作無法復原。`,
+    "確定要整個刪除這組同步嗎？\n\n所有使用這組密碼的裝置都會斷開連結，此動作無法復原。",
     { confirmText: "刪除", danger: true }
   );
   if (!confirmed) return;
   withButtonDisabled("sync-delete-btn", async () => {
     setSyncStatus("正在刪除同步…");
-    const result = await deleteSyncDoc(code, passcode);
+    const result = await deleteSyncDoc(passcode);
     if (!result.ok) {
       setSyncStatus(`刪除失敗：${result.error}`, true);
       return;
@@ -1059,7 +1101,7 @@ function togglePasscodeReveal() {
 }
 
 function acknowledgeSyncCreatedCodes() {
-  pendingCreatedCodes = null;
+  pendingCreatedPasscode = null;
   renderSyncPanel();
 }
 
@@ -1071,14 +1113,9 @@ function initSyncUI() {
   document.getElementById("sync-delete-btn")?.addEventListener("click", vocabSyncDeleteForEveryone);
   document.getElementById("sync-passcode-toggle")?.addEventListener("click", togglePasscodeReveal);
   document.getElementById("sync-ack-btn")?.addEventListener("click", acknowledgeSyncCreatedCodes);
-  document.getElementById("sync-created-code-copy")?.addEventListener("click", () => {
-    if (pendingCreatedCodes) {
-      copyTextWithFeedback(pendingCreatedCodes.code, document.getElementById("sync-created-code-copy"));
-    }
-  });
   document.getElementById("sync-created-passcode-copy")?.addEventListener("click", () => {
-    if (pendingCreatedCodes) {
-      copyTextWithFeedback(pendingCreatedCodes.passcode, document.getElementById("sync-created-passcode-copy"));
+    if (pendingCreatedPasscode) {
+      copyTextWithFeedback(pendingCreatedPasscode, document.getElementById("sync-created-passcode-copy"));
     }
   });
   renderSyncPanel();
