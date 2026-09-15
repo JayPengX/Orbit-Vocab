@@ -102,10 +102,31 @@
     // time (the plain overall average) for every length instead of
     // overfitting a line to a handful of points.
     minSamplesForLengthTrend: 8,
-    // A word tested moments ago is temporarily de-prioritized (even if
-    // it's slow/weak) so the same word or two don't monopolize every
-    // round; its weight recovers back to normal over this many days.
-    reviewRecencyFullRecoveryDays: 3,
+    // A word tested within this many days is HARD-excluded from a
+    // category's main ranking (see rankCandidates/splitByCooldown) -
+    // pushed to a last-resort fallback tier used only once every other
+    // candidate in that category is exhausted, rather than merely
+    // down-weighted. An auto-mode round is the ENTIRE ranked backlog,
+    // sliced by session TIME rather than a fixed question count (see
+    // app.js's testMinutes), so a large backlog gets replayed across MANY
+    // sessions either way - a soft weight multiplier alone wasn't a strong
+    // enough lever to stop the same easy-favored subset from winning
+    // session after session while a genuinely large tail sat unseen far
+    // longer than it should have; a hard exclusion guarantees a full day's
+    // worth of OTHER content gets explored first, giving a big backlog
+    // real depth across sessions instead of replaying the same front.
+    reviewCooldownDays: 1,
+    // Beyond the hard cooldown above, a word's weight keeps recovering
+    // gradually over this many days - a finer-grained preference for "not
+    // tested in a while" among candidates that already cleared the
+    // cooldown, e.g. preferring one last touched 10 days ago over one
+    // touched 2 days ago even though both are past the 1-day cutoff.
+    reviewRecencyFullRecoveryDays: 7,
+    // The floor an ELIGIBLE (past cooldown) word's weight can be dampened
+    // to while still recovering (as a fraction of its un-dampened weight) -
+    // see reviewRecencyFullRecoveryDays above and the clamp() call that
+    // uses this.
+    reviewRecencyFloor: 0.1,
 
     // Window (most-recent attempts, across all words) used for "recent
     // performance" / response-time-trend reporting in Progress.
@@ -1292,36 +1313,37 @@
   // full weightedShuffle weight - but which DIRECTION predicted difficulty
   // pulls the weight depends on `category`:
   //
-  //   - "new"/"incorrect"/"reintroduce" (or omitted): higher predicted risk
-  //     -> higher weight. For "new", a never-seen word predicted hard is
-  //     exactly the one worth spending a new-word slot on now, while
-  //     attention is being allocated anyway. For "incorrect" (a word
-  //     that's currently wrong), the SAME direction means the words the
-  //     learner is most likely to keep getting wrong rank first - this
-  //     matters because an auto-mode round is the ENTIRE ranked backlog,
-  //     sliced by session TIME (see app.js's testMinutes), not a fixed
-  //     question count: an earlier version favored LOWER risk here (to
-  //     clear near-mastered words off the list fastest), which meant the
-  //     same easy front of a large backlog got seen every session while the
-  //     genuinely hard tail - sitting at the back of a list the session
-  //     never reaches the end of - could go unseen indefinitely. Ranking
-  //     hardest-first guarantees the words actually causing trouble are the
-  //     ones a time-boxed session actually reaches.
-  //   - "learning": LOWER predicted risk -> higher weight. A "learning"
-  //     word is already confirmed correct on its most recent try (see
-  //     classifyState) and just needs one more correct answer to graduate
-  //     back to Memorized - prioritizing the ones closest to that clears
-  //     them out fastest, the same reasoning "incorrect" used to use before
-  //     the round-is-the-whole-backlog problem above ruled it out there.
+  //   - "new"/"reintroduce" (or omitted): higher predicted risk -> higher
+  //     weight. A never-seen word predicted hard is exactly the one worth
+  //     spending a new-word slot on now, while attention is being allocated
+  //     anyway - surfacing it early is more useful than a new word the
+  //     learner would likely have gotten right regardless.
+  //   - "incorrect"/"learning": LOWER predicted risk -> higher weight.
+  //     These words are already in the review backlog; the goal here is to
+  //     clear the ones closest to mastered off the list fastest (a correct
+  //     answer moves them toward Memorized, a word not shown doesn't), so
+  //     review slots preferentially go to backlog words most likely to be
+  //     answered right. This leaves the genuinely hard backlog words - the
+  //     ones that keep NOT clearing - relatively more prominent in what's
+  //     left over time. (An auto-mode round requests the ENTIRE ranked
+  //     backlog, sliced by session TIME rather than a fixed question count
+  //     - see app.js's testMinutes - so a large backlog isn't fully
+  //     replayed every session either way; what actually keeps the SAME
+  //     easy front from monopolizing every session is the recency dampener
+  //     below, not this direction - see CONFIG's own
+  //     "reviewRecencyFullRecoveryDays" comment.)
   //
   // Beyond that baseline pull, two multiplicative adjustments layer on top
   // exactly as they always have for review words - a slower-than-expected
   // response time (still a meaningful signal beyond raw correctness:
   // hesitation on a technically-right answer) nudges the weight up further,
   // and a temporary dampener right after the word was last tested keeps the
-  // same word or two from monopolizing every round. A never-attempted word
-  // simply has no response time or last-seen data, so both adjustments are
-  // no-ops for it.
+  // same word or two from monopolizing every round - see CONFIG's own
+  // "reviewRecencyFullRecoveryDays" comment for why this, not the direction
+  // above, is what's responsible for a large backlog getting explored in
+  // DEPTH across sessions instead of replaying the same front repeatedly. A
+  // never-attempted word simply has no response time or last-seen data, so
+  // both adjustments are no-ops for it.
   //
   // Level balance (see computeLevelBalanceModel) is DELIBERATELY not folded
   // in here as another multiplier, unlike the two adjustments above: now
@@ -1337,7 +1359,7 @@
   // regardless of how this weight alone would have ranked them.
   function computeSelectionWeight(w, history, models, now, category) {
     const risk = predictWordDifficulty(w.word, w.level, history, models.difficultyBaseline, models.interferenceModel, w.pos);
-    const effectiveRisk = category === "learning" ? 1 - risk : risk;
+    const effectiveRisk = category === "incorrect" || category === "learning" ? 1 - risk : risk;
     let weight = 0.5 + effectiveRisk * 2;
 
     const rel = relativeResponseTime(history, models.responseTimeBaseline);
@@ -1345,7 +1367,7 @@
 
     const lastSeen = (history && history.lastSeen) || 0;
     const daysSince = lastSeen ? Math.max(0, (now - lastSeen) / ONE_DAY_MS) : Infinity;
-    weight *= clamp(daysSince / CONFIG.reviewRecencyFullRecoveryDays, 0.15, 1);
+    weight *= clamp(daysSince / CONFIG.reviewRecencyFullRecoveryDays, CONFIG.reviewRecencyFloor, 1);
 
     return weight;
   }
@@ -1562,22 +1584,49 @@
   // then interleaved via mergeByLevelShare so every level keeps a fair,
   // proportional share of the result instead of the highest-scoring level
   // crowding out the others entirely - see that function's own comment.
+  // HARD-excludes anything tested within CONFIG.reviewCooldownDays from the
+  // main ranking, falling back to it only once the rest of this same
+  // category's candidates are used up (see rankCandidates below, the only
+  // caller). This exists because the SOFT recency dampening in
+  // computeSelectionWeight (a multiplier, not an exclusion) turned out not
+  // to be a strong enough lever on its own for spreading a large backlog
+  // out over many sessions - see CONFIG's own "reviewCooldownDays" comment.
+  // Never touches which WORDS are eligible, only their ORDER: a word still
+  // in cooldown remains a legitimate fallback candidate, just a
+  // last-resort one, so a small backlog still gets fully used rather than
+  // coming up short.
+  function splitByCooldown(withMeta, now) {
+    const cooldownMs = CONFIG.reviewCooldownDays * ONE_DAY_MS;
+    const eligible = [];
+    const cooldown = [];
+    for (const item of withMeta) {
+      if (item.lastSeen && now - item.lastSeen < cooldownMs) cooldown.push(item);
+      else eligible.push(item);
+    }
+    return { eligible: eligible, cooldown: cooldown };
+  }
+
   function rankCandidates(words, historyStore, random, now, models, category) {
     const withMeta = shuffle(words, random).map((w) => {
       const h = historyFor(historyStore, w.word);
-      return { w: w, weight: computeSelectionWeight(w, h, models, now, category) };
+      return { w: w, weight: computeSelectionWeight(w, h, models, now, category), lastSeen: (h && h.lastSeen) || 0 };
     });
 
-    if (!models.levelBalance) return sortByWeightDesc(withMeta).map((x) => x.w);
-
-    const byLevel = {};
-    for (const item of withMeta) {
-      const lvl = item.w.level;
-      (byLevel[lvl] = byLevel[lvl] || []).push(item);
+    function rankGroup(group) {
+      if (!group.length) return [];
+      if (!models.levelBalance) return sortByWeightDesc(group).map((x) => x.w);
+      const byLevel = {};
+      for (const item of group) {
+        const lvl = item.w.level;
+        (byLevel[lvl] = byLevel[lvl] || []).push(item);
+      }
+      const sortedByLevel = {};
+      for (const lvl of Object.keys(byLevel)) sortedByLevel[lvl] = sortByWeightDesc(byLevel[lvl]).map((x) => x.w);
+      return mergeByLevelShare(sortedByLevel, (lvl) => models.levelBalance.weightOf(Number(lvl), category));
     }
-    const sortedByLevel = {};
-    for (const lvl of Object.keys(byLevel)) sortedByLevel[lvl] = sortByWeightDesc(byLevel[lvl]).map((x) => x.w);
-    return mergeByLevelShare(sortedByLevel, (lvl) => models.levelBalance.weightOf(Number(lvl), category));
+
+    const { eligible, cooldown } = splitByCooldown(withMeta, now);
+    return rankGroup(eligible).concat(rankGroup(cooldown));
   }
 
   // Fills bucket targets from ranked candidate lists, then redistributes

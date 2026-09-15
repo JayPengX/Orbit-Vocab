@@ -376,32 +376,20 @@ test("computeSelectionWeight with category 'new' (or omitted) gives a higher-ris
   assert.ok(weightHardNew > weightEasyNew, "category 'new' should favor the harder (higher-risk) word");
 });
 
-test("computeSelectionWeight with category 'learning' gives a higher-risk word a LOWER weight - the opposite direction from 'new'", () => {
+test("computeSelectionWeight with category 'incorrect' or 'learning' gives a higher-risk word a LOWER weight - the opposite direction from 'new', to clear near-mastered backlog words fastest", () => {
   const now = 1000000;
   const models = { difficultyBaseline: { predict: (word) => (word === "hard" ? 0.9 : 0.1) }, interferenceModel: null, responseTimeBaseline: null };
   const hard = { word: "hard", level: 4 };
   const easy = { word: "easy", level: 4 };
 
-  const weightHard = L.computeSelectionWeight(hard, null, models, now, "learning");
-  const weightEasy = L.computeSelectionWeight(easy, null, models, now, "learning");
-  assert.ok(
-    weightEasy > weightHard,
-    `category 'learning' should favor the EASIER (lower-risk) word, to graduate it back to Memorized fastest (easy=${weightEasy}, hard=${weightHard})`
-  );
-});
-
-test("computeSelectionWeight with category 'incorrect' gives a higher-risk word a HIGHER weight - same direction as 'new', unlike 'learning' (an auto-mode round is the whole ranked backlog sliced by session time, so the words actually causing trouble must rank first or a large backlog's hard tail may never be reached)", () => {
-  const now = 1000000;
-  const models = { difficultyBaseline: { predict: (word) => (word === "hard" ? 0.9 : 0.1) }, interferenceModel: null, responseTimeBaseline: null };
-  const hard = { word: "hard", level: 4 };
-  const easy = { word: "easy", level: 4 };
-
-  const weightHard = L.computeSelectionWeight(hard, null, models, now, "incorrect");
-  const weightEasy = L.computeSelectionWeight(easy, null, models, now, "incorrect");
-  assert.ok(
-    weightHard > weightEasy,
-    `category 'incorrect' should favor the HARDER (higher-risk) word, so it isn't perpetually pushed to the back of a large backlog (easy=${weightEasy}, hard=${weightHard})`
-  );
+  for (const category of ["incorrect", "learning"]) {
+    const weightHard = L.computeSelectionWeight(hard, null, models, now, category);
+    const weightEasy = L.computeSelectionWeight(easy, null, models, now, category);
+    assert.ok(
+      weightEasy > weightHard,
+      `category '${category}' should favor the EASIER (lower-risk) word, to clear it off the backlog first (easy=${weightEasy}, hard=${weightHard})`
+    );
+  }
 });
 
 test("computeSelectionWeight's category direction is purely about which way risk points - the response-time and recency adjustments still apply identically regardless of category", () => {
@@ -654,6 +642,63 @@ test("selectQuestions no longer systematically favors long words for review just
   }
   const rate = longFirstCount / trials;
   assert.ok(rate > 0.35 && rate < 0.65, `the long word should not dominate the front of the list just for being long (rate=${rate})`);
+});
+
+/* ================= Hard review cooldown: a just-tested word is EXCLUDED
+   from a category's main ranking, not just down-weighted - see
+   CONFIG.reviewCooldownDays/rankCandidates's splitByCooldown ================= */
+
+test("selectQuestions excludes a just-tested incorrect word from the round while enough OTHER incorrect candidates exist to fill it", () => {
+  const historyStore = {};
+  const now = 100 * 24 * 60 * 60 * 1000;
+  const justTested = makeWord("recent", 4);
+  const hRecent = L.createEmptyWordHistory("recent", 4, 6);
+  L.recordAttempt(hRecent, { correct: false, timestamp: now - 60 * 60 * 1000, level: 4, length: 6 }); // 1 hour ago
+  historyStore.recent = hRecent;
+
+  const others = makePool(5, 4, "stale");
+  for (const w of others) {
+    const h = L.createEmptyWordHistory(w.word, w.level, w.word.length);
+    L.recordAttempt(h, { correct: false, timestamp: now - 10 * 24 * 60 * 60 * 1000, level: w.level, length: w.word.length }); // 10 days ago
+    historyStore[w.word.toLowerCase()] = h;
+  }
+
+  const selection = L.selectQuestions({
+    pool: [justTested].concat(others),
+    historyStore: historyStore,
+    size: 2,
+    ratio: { new: 0, incorrect: 1, learning: 0 },
+    now: now,
+    random: seededRandom(1),
+  });
+  assert.ok(!selection.some((w) => w.word === "recent"), "a word tested an hour ago should not appear while 5 other eligible incorrect words exist");
+});
+
+test("selectQuestions still includes a just-tested incorrect word as a last-resort fallback once every other incorrect candidate is exhausted", () => {
+  const historyStore = {};
+  const now = 100 * 24 * 60 * 60 * 1000;
+  const justTested = makeWord("recent", 4);
+  const hRecent = L.createEmptyWordHistory("recent", 4, 6);
+  L.recordAttempt(hRecent, { correct: false, timestamp: now - 60 * 60 * 1000, level: 4, length: 6 });
+  historyStore.recent = hRecent;
+
+  const others = makePool(2, 4, "stale");
+  for (const w of others) {
+    const h = L.createEmptyWordHistory(w.word, w.level, w.word.length);
+    L.recordAttempt(h, { correct: false, timestamp: now - 10 * 24 * 60 * 60 * 1000, level: w.level, length: w.word.length });
+    historyStore[w.word.toLowerCase()] = h;
+  }
+
+  // 3 incorrect words total, round needs all 3 - the just-tested one MUST be included.
+  const selection = L.selectQuestions({
+    pool: [justTested].concat(others),
+    historyStore: historyStore,
+    size: 3,
+    ratio: { new: 0, incorrect: 1, learning: 0 },
+    now: now,
+    random: seededRandom(1),
+  });
+  assert.ok(selection.some((w) => w.word === "recent"), "with no other incorrect candidates left, the just-tested word must still fill the round rather than coming up short");
 });
 
 /* ================= Deterministic dominance: the prediction decides which
