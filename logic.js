@@ -237,14 +237,21 @@
     // the point it's effectively never reviewed again.
     srsMaxIntervalDays: 120,
 
-    // ---- Level balancing (auto mode) ----
-    // When a round spans more than one curriculum level, a level whose
-    // words have on average been attempted less than the other selected
-    // levels is "under-served" and gets a selection boost; one attempted
-    // more than average gets dampened. This keeps auto mode from letting
-    // whichever level happens to rank easiest/hardest under the difficulty
-    // model alone quietly dominate every round - each selected level gets
-    // its fair turn regardless of how its words individually score.
+    // ---- Level balancing (auto mode - see computeLevelBalanceModel) ----
+    // When a round spans more than one curriculum level, each level's fair
+    // share is judged by TWO separate signals, not one:
+    //   - for NEW words: a level attempted less on average than the others
+    //     is "under-exposed" and gets boosted; one attempted more gets
+    //     dampened - first exposure should rotate fairly across levels.
+    //   - for INCORRECT/LEARNING words: a level whose own backlog is under
+    //     more pressure than the others (see computeBacklogPressure) gets
+    //     boosted instead - a level can be heavily drilled AND still be
+    //     genuinely struggling, which raw exposure alone can't tell apart
+    //     from a level that's heavily drilled and doing fine.
+    // Both share the same clamp range below. This keeps auto mode from
+    // letting whichever level happens to rank easiest/hardest (or simply
+    // has the least backlog) quietly dominate every round - each selected
+    // level gets its fair turn in both new AND review slots.
     autoLevelBalanceWeightMin: 0.6,
     autoLevelBalanceWeightMax: 1.8,
   };
@@ -1197,33 +1204,76 @@
   // round is drawn from - with only one level selected there is nothing to
   // balance, so this returns null (a no-op) rather than a model whose
   // single level would always resolve to a no-op weight of 1 anyway.
-  function computeLevelBalanceModel(pool, historyStore) {
+  //
+  // Returns TWO weight tables, not one, because "which level needs a boost"
+  // is a different question for new words than for review words:
+  //
+  //   - exposureWeight (used for the "new" category) - a level explored
+  //     LESS than the others (fewer average attempts per word) gets
+  //     boosted, so a multi-level round doesn't let whichever level's new
+  //     words happen to rank easiest/hardest crowd out first exposure to
+  //     the others.
+  //   - reviewWeight (used for "incorrect"/"learning") - a level whose
+  //     OWN review backlog is under more PRESSURE than the others (see
+  //     computeBacklogPressure - severity-weighted, not just headcount)
+  //     gets boosted. This used to reuse exposureWeight for review too,
+  //     which conflated two different things: a level can be heavily
+  //     drilled (high exposure -> exposureWeight dampens it) and STILL
+  //     have a large, severe backlog if it's genuinely harder for this
+  //     learner - exposure alone can't tell a level that's "practiced a
+  //     lot and doing fine" apart from one that's "practiced a lot and
+  //     still struggling", but backlog pressure can.
+  function computeLevelBalanceModel(pool, historyStore, now) {
+    const at = typeof now === "number" ? now : Date.now();
     const byLevel = {};
     for (const w of pool || []) {
       const lvl = w.level;
       if (lvl == null) continue;
-      if (!byLevel[lvl]) byLevel[lvl] = { count: 0, totalAttempts: 0 };
-      byLevel[lvl].count += 1;
+      if (!byLevel[lvl]) byLevel[lvl] = { words: [], totalAttempts: 0 };
+      byLevel[lvl].words.push(w);
       const h = historyFor(historyStore, w.word);
       byLevel[lvl].totalAttempts += (h && h.attempts) || 0;
     }
     const levels = Object.keys(byLevel);
     if (levels.length < 2) return null;
 
-    const avgPerLevel = levels.map((l) => (byLevel[l].count ? byLevel[l].totalAttempts / byLevel[l].count : 0));
-    const overallAvg = average(avgPerLevel);
-    const weightByLevel = {};
+    const avgAttemptsPerLevel = levels.map((l) => (byLevel[l].words.length ? byLevel[l].totalAttempts / byLevel[l].words.length : 0));
+    const overallAvgAttempts = average(avgAttemptsPerLevel);
+    const exposureWeight = {};
     for (const l of levels) {
-      const levelAvg = byLevel[l].count ? byLevel[l].totalAttempts / byLevel[l].count : 0;
+      const levelAvg = byLevel[l].words.length ? byLevel[l].totalAttempts / byLevel[l].words.length : 0;
       // Below-average exposure -> ratio < 1 -> weight > 1 (boost this
       // level); above-average -> ratio > 1 -> weight < 1 (dampen it). With
       // no attempts anywhere yet (overallAvg is 0), every level is exactly
       // at parity, so this is a no-op until real data exists to balance.
-      const ratio = overallAvg > 0 ? levelAvg / overallAvg : 1;
-      weightByLevel[l] = clamp(1 / Math.max(0.2, ratio), CONFIG.autoLevelBalanceWeightMin, CONFIG.autoLevelBalanceWeightMax);
+      const ratio = overallAvgAttempts > 0 ? levelAvg / overallAvgAttempts : 1;
+      exposureWeight[l] = clamp(1 / Math.max(0.2, ratio), CONFIG.autoLevelBalanceWeightMin, CONFIG.autoLevelBalanceWeightMax);
     }
+
+    const pressurePerWordByLevel = {};
+    for (const l of levels) {
+      const cats = categorizeWords(byLevel[l].words, historyStore, at);
+      const pressure = computeBacklogPressure(cats.incorrect, historyStore, at) + computeBacklogPressure(cats.learning, historyStore, at);
+      pressurePerWordByLevel[l] = byLevel[l].words.length ? pressure / byLevel[l].words.length : 0;
+    }
+    const overallAvgPressure = average(levels.map((l) => pressurePerWordByLevel[l]));
+    const reviewWeight = {};
+    for (const l of levels) {
+      // Above-average backlog pressure -> ratio > 1 -> weight > 1 (boost
+      // this level's share of review slots) - the OPPOSITE direction from
+      // exposureWeight above, since here more pressure means it needs MORE
+      // attention, not less. No pressure anywhere yet (overallAvgPressure
+      // is 0) leaves every level at parity, same as exposureWeight.
+      const ratio = overallAvgPressure > 0 ? pressurePerWordByLevel[l] / overallAvgPressure : 1;
+      reviewWeight[l] = clamp(ratio, CONFIG.autoLevelBalanceWeightMin, CONFIG.autoLevelBalanceWeightMax);
+    }
+
     return {
-      weightOf: (level) => (level != null && weightByLevel[level] != null ? weightByLevel[level] : 1),
+      weightOf: (level, category) => {
+        if (level == null) return 1;
+        const table = category === "incorrect" || category === "learning" ? reviewWeight : exposureWeight;
+        return table[level] != null ? table[level] : 1;
+      },
     };
   }
 
@@ -1378,7 +1428,7 @@
     }
     const sortedByLevel = {};
     for (const lvl of Object.keys(byLevel)) sortedByLevel[lvl] = sortByWeightDesc(byLevel[lvl]).map((x) => x.w);
-    return mergeByLevelShare(sortedByLevel, (lvl) => models.levelBalance.weightOf(Number(lvl)));
+    return mergeByLevelShare(sortedByLevel, (lvl) => models.levelBalance.weightOf(Number(lvl), category));
   }
 
   // Fills bucket targets from ranked candidate lists, then redistributes
@@ -1579,7 +1629,7 @@
     // 新字優先/只複習 presets and the user's own 進階 sliders are a
     // deliberate manual choice that shouldn't be second-guessed by an
     // automatic per-level boost/dampen underneath it.
-    if (o.levelBalance) models.levelBalance = computeLevelBalanceModel(pool, historyStore);
+    if (o.levelBalance) models.levelBalance = computeLevelBalanceModel(pool, historyStore, now);
     const targets = computeQuestionTargets(size, ratio);
     const categoryWords = { new: unseen, incorrect: incorrect, learning: learning };
 

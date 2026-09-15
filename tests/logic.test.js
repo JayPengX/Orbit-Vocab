@@ -410,6 +410,51 @@ test("computeLevelBalanceModel boosts a level that's been attempted far LESS tha
   assert.ok(model.weightOf(6) <= L.CONFIG.autoLevelBalanceWeightMax);
 });
 
+test("computeLevelBalanceModel's weightOf defaults to the exposure table (same as omitting category) for 'new' or an unrecognized category", () => {
+  const heavyLevel = makePool(20, 4, "heavy");
+  const lightLevel = makePool(20, 6, "light");
+  const pool = heavyLevel.concat(lightLevel);
+  const historyStore = {};
+  for (const w of heavyLevel) historyStore[w.word] = { attempts: 20 };
+  for (const w of lightLevel) historyStore[w.word] = { attempts: 1 };
+
+  const model = L.computeLevelBalanceModel(pool, historyStore);
+  assert.equal(model.weightOf(4, "new"), model.weightOf(4));
+  assert.equal(model.weightOf(6, "new"), model.weightOf(6));
+});
+
+test("computeLevelBalanceModel's review weight is a SEPARATE signal from exposure - a heavily-practiced level with a severe backlog gets dampened for new words but boosted for incorrect/learning", () => {
+  // Both levels equally, heavily practiced (identical average attempts) -
+  // exposureWeight should be at parity for "new". But level 4's words are
+  // all entrenched misses (severe backlog pressure) while level 6's are
+  // all comfortably correct (near-zero backlog) - reviewWeight should
+  // diverge sharply even though exposure alone sees no difference.
+  const strugglingLevel = makePool(20, 4, "struggling");
+  const thrivingLevel = makePool(20, 6, "thriving");
+  const pool = strugglingLevel.concat(thrivingLevel);
+  const historyStore = {};
+  for (const w of strugglingLevel) {
+    const h = L.createEmptyWordHistory(w.word, 4, w.word.length);
+    for (let i = 0; i < 6; i++) L.recordAttempt(h, { correct: false, timestamp: 1000 + i * 1000, level: 4, length: w.word.length });
+    historyStore[w.word.toLowerCase()] = h;
+  }
+  for (const w of thrivingLevel) {
+    const h = L.createEmptyWordHistory(w.word, 6, w.word.length);
+    for (let i = 0; i < 6; i++) L.recordAttempt(h, { correct: true, timestamp: 1000 + i * 1000, level: 6, length: w.word.length });
+    historyStore[w.word.toLowerCase()] = h;
+  }
+
+  const model = L.computeLevelBalanceModel(pool, historyStore, 20000);
+  const newWeightStruggling = model.weightOf(4, "new");
+  const newWeightThriving = model.weightOf(6, "new");
+  assert.ok(Math.abs(newWeightStruggling - newWeightThriving) < 1e-9, `equal exposure should mean equal "new" weight regardless of backlog (struggling=${newWeightStruggling}, thriving=${newWeightThriving})`);
+
+  const reviewWeightStruggling = model.weightOf(4, "incorrect");
+  const reviewWeightThriving = model.weightOf(6, "incorrect");
+  assert.ok(reviewWeightStruggling > reviewWeightThriving, `the level with the severe backlog should get MORE review share than the thriving one (struggling=${reviewWeightStruggling}, thriving=${reviewWeightThriving})`);
+  assert.equal(model.weightOf(4, "learning"), reviewWeightStruggling, "incorrect and learning share the same review weight table");
+});
+
 test("selectQuestions with levelBalance:true noticeably shifts the level mix toward an under-practiced level vs levelBalance omitted", () => {
   // Both pools' words are all in the SAME state ("learning": some attempts,
   // never wrong, streak not yet at Memorized) and all correct so far (0%
