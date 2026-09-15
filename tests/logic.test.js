@@ -84,6 +84,18 @@ test("recordAttempt handles multiple attempts and caps the detailed ring buffer 
   assert.equal(h.recentAttempts[h.recentAttempts.length - 1].attemptNumber, 30, "ring buffer keeps the most recent attempts");
 });
 
+test("recordAttempt tracks incorrectStreak: grows on consecutive misses, resets to 0 on any correct answer", () => {
+  const h = L.createEmptyWordHistory("miss", 4, 4);
+  L.recordAttempt(h, { correct: false, timestamp: 1000, level: 4, length: 4 });
+  assert.equal(h.incorrectStreak, 1);
+  L.recordAttempt(h, { correct: false, timestamp: 2000, level: 4, length: 4 });
+  assert.equal(h.incorrectStreak, 2);
+  L.recordAttempt(h, { correct: false, timestamp: 3000, level: 4, length: 4 });
+  assert.equal(h.incorrectStreak, 3);
+  L.recordAttempt(h, { correct: true, timestamp: 4000, level: 4, length: 4 });
+  assert.equal(h.incorrectStreak, 0, "a correct answer resets the miss streak, even after a long run of misses");
+});
+
 /* ================= State classification: simple streak model ================= */
 
 test("brand new (unattempted) word is state 'new'", () => {
@@ -898,6 +910,79 @@ test("computeAutoBalanceRatioForPool derives counts from a pool + historyStore, 
   const fromPool = L.computeAutoBalanceRatioForPool(pool, historyStore);
   const direct = L.computeAutoBalanceRatio({ new: 100, incorrect: 10, learning: 5 });
   assert.deepEqual(fromPool, direct);
+});
+
+/* ================= Backlog pressure weighting: severity, not just headcount
+   (computeBacklogPressure) ================= */
+
+test("computeBacklogPressure gives a word missed once the same baseline weight as before (1 per word) - purely additive, no regression for the common case", () => {
+  const historyStore = {};
+  const words = makePool(5, 4, "once");
+  for (const w of words) {
+    const h = L.createEmptyWordHistory(w.word, w.level, w.word.length);
+    L.recordAttempt(h, { correct: false, timestamp: 1000, level: w.level, length: w.word.length });
+    historyStore[w.word.toLowerCase()] = h;
+  }
+  assert.equal(L.computeBacklogPressure(words, historyStore, 2000), 5);
+});
+
+test("computeBacklogPressure weighs a word missed several times in a row higher than one missed just once, capped so it can't dwarf the rest", () => {
+  const historyStore = {};
+  const onceWord = makeWord("slip", 4);
+  const h1 = L.createEmptyWordHistory("slip", 4, 4);
+  L.recordAttempt(h1, { correct: false, timestamp: 1000, level: 4, length: 4 });
+  historyStore.slip = h1;
+
+  const entrenchedWord = makeWord("stuck", 4);
+  const h2 = L.createEmptyWordHistory("stuck", 4, 5);
+  for (let i = 0; i < 8; i++) L.recordAttempt(h2, { correct: false, timestamp: 1000 + i * 1000, level: 4, length: 5 });
+  historyStore.stuck = h2;
+
+  const oncePressure = L.computeBacklogPressure([onceWord], historyStore, 20000);
+  const entrenchedPressure = L.computeBacklogPressure([entrenchedWord], historyStore, 20000);
+  assert.equal(oncePressure, 1);
+  assert.ok(entrenchedPressure > oncePressure, "8 consecutive misses should weigh more than 1");
+  const expectedCapped = 1 + L.CONFIG.backlogSeverityCap * L.CONFIG.backlogSeverityWeightPerMiss;
+  assert.ok(Math.abs(entrenchedPressure - expectedCapped) < 1e-9, "severity weight should be capped, not grow unbounded with the streak");
+});
+
+test("computeBacklogPressure weighs a re-surfaced Memorized word higher the further past its due date it is, but a freshly-due one is still baseline", () => {
+  const historyStore = {};
+  const word = makeWord("overdue", 4);
+  const h = L.createEmptyWordHistory("overdue", 4, 7);
+  play(h, [{ correct: true }, { correct: true }]); // memorized at t=3000, due at 3000 + 3 days
+  historyStore.overdue = h;
+
+  const justDue = 3000 + 3 * 24 * 60 * 60 * 1000;
+  const wayOverdue = 3000 + (3 + 30) * 24 * 60 * 60 * 1000; // a month past due
+  const justDuePressure = L.computeBacklogPressure([word], historyStore, justDue);
+  const wayOverduePressure = L.computeBacklogPressure([word], historyStore, wayOverdue);
+  assert.ok(Math.abs(justDuePressure - 1) < 1e-9, "a word just barely due yet should still read as baseline pressure");
+  assert.ok(wayOverduePressure > justDuePressure, "a month-overdue Memorized word should weigh more than one that just became due");
+  const expectedCapped = 1 + L.CONFIG.backlogOverdueMaxWeight;
+  assert.ok(Math.abs(wayOverduePressure - expectedCapped) < 1e-9, "overdue weight should be capped, not grow unbounded forever");
+});
+
+test("computeAutoBalanceRatioForPool gives a more severe backlog a higher review share than an equally-SIZED but mild one - the fix for 'balancing only looks at headcount'", () => {
+  const mildStore = {};
+  const severeStore = {};
+  const mildWords = makePool(10, 4, "mild");
+  const severeWords = makePool(10, 4, "severe");
+  for (const w of mildWords) {
+    const h = L.createEmptyWordHistory(w.word, w.level, w.word.length);
+    L.recordAttempt(h, { correct: false, timestamp: 1000, level: w.level, length: w.word.length }); // missed once each
+    mildStore[w.word.toLowerCase()] = h;
+  }
+  for (const w of severeWords) {
+    const h = L.createEmptyWordHistory(w.word, w.level, w.word.length);
+    for (let i = 0; i < 6; i++) L.recordAttempt(h, { correct: false, timestamp: 1000 + i * 1000, level: w.level, length: w.word.length }); // missed 6x running each
+    severeStore[w.word.toLowerCase()] = h;
+  }
+  const newWords = makePool(200, 6, "new");
+  const mildRatio = L.computeAutoBalanceRatioForPool(mildWords.concat(newWords), mildStore, 20000);
+  const severeRatio = L.computeAutoBalanceRatioForPool(severeWords.concat(newWords), severeStore, 20000);
+  assert.equal(mildWords.length, severeWords.length, "same backlog SIZE in both cases - only severity differs");
+  assert.ok(severeRatio.incorrect > mildRatio.incorrect, `an equally-sized but more entrenched backlog should get a bigger review share (mild=${mildRatio.incorrect}, severe=${severeRatio.incorrect})`);
 });
 
 /* ================= Manual "review this again" marking ================= */

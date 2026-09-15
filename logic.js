@@ -89,11 +89,15 @@
     maxRecentWrongAnswersShown: 3,
 
     // ---- Auto-balance mode (see computeAutoBalanceRatio) ----
-    // The review "backlog" (incorrect + learning word count) at which auto
-    // mode treats review pressure as maxed out - a backlog at or above this
-    // gets the ceiling review share below; a backlog of 0 always gets 0%
-    // review (nothing to review yet, so it's 100% new words) regardless of
-    // this number.
+    // The review "backlog" (incorrect + learning PRESSURE, not a raw word
+    // count - see computeBacklogPressure) at which auto mode treats review
+    // pressure as maxed out - a backlog at or above this gets the ceiling
+    // review share below; a backlog of 0 always gets 0% review (nothing to
+    // review yet, so it's 100% new words) regardless of this number. A
+    // backlog entirely made of fresh, first-time misses saturates at
+    // exactly this many WORDS, same as before computeBacklogPressure
+    // existed - it only saturates FASTER (fewer, more severe words) once
+    // entrenched or overdue backlog items are involved.
     autoBalanceBacklogSaturation: 40,
     // Review share never exceeds this even at a saturated backlog - a
     // sliver of new words always keeps trickling in rather than the round
@@ -118,6 +122,30 @@
     // more urgently than learning words per-word (still-wrong beats
     // almost-there) when splitting the share between the two categories.
     autoBalanceIncorrectWeight: 1.5,
+
+    // ---- Backlog pressure weighting (see computeBacklogPressure) ----
+    // The auto-balance ratio above used to treat every backlog word as
+    // exactly one unit of "pressure", so two learners with equally-SIZED
+    // backlogs of very different severity (20 words each missed once vs.
+    // 20 words each missed five times running) got identical review share.
+    // These let a backlog word's actual severity - not just its existence -
+    // push the ratio, on top of the flat autoBalanceIncorrectWeight split
+    // above (which is about category, not severity).
+    //
+    // How many EXTRA consecutive misses (beyond the first) add weight to an
+    // incorrect word's pressure contribution, and how much each one adds -
+    // capped so a word missed 20 times running doesn't dwarf the rest of
+    // the backlog on its own.
+    backlogSeverityCap: 4,
+    backlogSeverityWeightPerMiss: 0.5,
+    // How many days overdue a re-surfaced Memorized word (see
+    // isDueForReview) needs to reach its full extra weight, and how much
+    // extra weight a fully-overdue one adds - a word overdue by two weeks
+    // is more at risk of genuinely being forgotten than one that only just
+    // became due, even though categorizeWords treats both the same
+    // ("learning") for selection purposes.
+    backlogOverdueSaturationDays: 14,
+    backlogOverdueMaxWeight: 1.5,
 
     // ---- Predicting word difficulty - one system for new, incorrect, and
     // learning words alike (see predictWordDifficulty/rankCandidates) ----
@@ -311,6 +339,11 @@
       correct: 0,
       incorrect: 0,
       correctStreak: 0,
+      // Consecutive WRONG answers, mirroring correctStreak - reset to 0 by
+      // any correct answer. Lets computeBacklogPressure tell an entrenched
+      // miss (wrong several times running) apart from a one-off slip,
+      // something a bare "state === incorrect" flag can't distinguish.
+      incorrectStreak: 0,
       // ---- Spaced-repetition scheduling (see CONFIG's own comment and
       // recordAttempt) - dueAt 0 means "due now", same as a brand new word,
       // which is exactly right: nothing to schedule yet. ----
@@ -433,9 +466,11 @@
     if (correct) {
       history.correct = (history.correct || 0) + 1;
       history.correctStreak = (history.correctStreak || 0) + 1;
+      history.incorrectStreak = 0;
     } else {
       history.incorrect = (history.incorrect || 0) + 1;
       history.correctStreak = 0;
+      history.incorrectStreak = (history.incorrectStreak || 0) + 1;
       history.lastWrongAnswer = answer;
     }
     history.lastResult = correct ? "correct" : "incorrect";
@@ -1432,18 +1467,64 @@
     return { new: newShare, incorrect: incorrectShare, learning: learningShare };
   }
 
+  // Sums a bucket's contribution to review PRESSURE - not a flat headcount
+  // (see CONFIG's own "Backlog pressure weighting" comment). Every backlog
+  // word starts at a baseline weight of 1 - identical to the old raw-count
+  // behavior - then gets bumped up by whichever of two signals applies:
+  //
+  //   - an INCORRECT word gets extra weight the more consecutive times
+  //     it's been missed (history.incorrectStreak) - an entrenched miss
+  //     needs more attention than a one-off slip, even though
+  //     categorizeWords buckets both identically as "incorrect".
+  //   - a re-surfaced Memorized word due for review (see isDueForReview) -
+  //     recognizable here as a "learning"-bucket word whose own
+  //     classifyState is still "memorized" - gets extra weight the
+  //     further PAST its due date it is. A word overdue by two weeks is
+  //     more at risk of really being forgotten than one that only just
+  //     became due, even though categorizeWords buckets both identically
+  //     as "learning".
+  //
+  // A brand new "learning" word (streak 1, never yet Memorized) matches
+  // neither signal, so it contributes exactly the baseline 1 - the whole
+  // point is that severity ADDS pressure on top of existing, it never
+  // takes any away.
+  function computeBacklogPressure(words, historyStore, now) {
+    const at = typeof now === "number" ? now : Date.now();
+    let total = 0;
+    for (const w of words) {
+      const h = historyFor(historyStore, w.word);
+      let weight = 1;
+      if (h) {
+        if ((h.incorrectStreak || 0) > 1) {
+          weight += Math.min(CONFIG.backlogSeverityCap, h.incorrectStreak - 1) * CONFIG.backlogSeverityWeightPerMiss;
+        }
+        if (h.dueAt && classifyState(h) === "memorized") {
+          const overdueDays = Math.max(0, (at - h.dueAt) / ONE_DAY_MS);
+          weight += Math.min(1, overdueDays / CONFIG.backlogOverdueSaturationDays) * CONFIG.backlogOverdueMaxWeight;
+        }
+      }
+      total += weight;
+    }
+    return total;
+  }
+
   // Convenience wrapper: categorizes `pool` against `historyStore` itself,
   // so callers (the app's "auto" mode) don't need to call categorizeWords
   // separately just to get counts. Safe to call on every question/answer
-  // in a round - it's just a counting pass over the pool, no randomness -
-  // which is what lets auto mode re-derive its ratio live as words move
-  // between categories mid-round.
+  // in a round - it's just a counting/summing pass over the pool, no
+  // randomness - which is what lets auto mode re-derive its ratio live as
+  // words move between categories (or simply grow more/less severe) mid-
+  // round. `incorrect`/`learning` are now PRESSURE sums (see
+  // computeBacklogPressure), not raw bucket lengths - two learners with
+  // equally-sized backlogs of very different severity now get different
+  // review share instead of being treated identically.
   function computeAutoBalanceRatioForPool(pool, historyStore, now) {
-    const cats = categorizeWords(pool, historyStore, now);
+    const at = typeof now === "number" ? now : Date.now();
+    const cats = categorizeWords(pool, historyStore, at);
     return computeAutoBalanceRatio({
       new: cats.unseen.length,
-      incorrect: cats.incorrect.length,
-      learning: cats.learning.length,
+      incorrect: computeBacklogPressure(cats.incorrect, historyStore, at),
+      learning: computeBacklogPressure(cats.learning, historyStore, at),
     });
   }
 
@@ -1633,6 +1714,7 @@
     selectReviewBatch: selectReviewBatch,
     computeQuestionTargets: computeQuestionTargets,
     computeAutoBalanceRatio: computeAutoBalanceRatio,
+    computeBacklogPressure: computeBacklogPressure,
     computeAutoBalanceRatioForPool: computeAutoBalanceRatioForPool,
     selectQuestions: selectQuestions,
     computeProgressSummary: computeProgressSummary,
