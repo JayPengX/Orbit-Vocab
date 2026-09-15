@@ -376,20 +376,37 @@ test("computeSelectionWeight with category 'new' (or omitted) gives a higher-ris
   assert.ok(weightHardNew > weightEasyNew, "category 'new' should favor the harder (higher-risk) word");
 });
 
-test("computeSelectionWeight with category 'incorrect' or 'learning' gives a higher-risk word a LOWER weight - the opposite direction from 'new', to clear near-mastered backlog words fastest", () => {
+test("computeSelectionWeight with category 'learning' gives a higher-PREDICTED-risk word a LOWER weight - the opposite direction from 'new', to clear near-mastered backlog words fastest", () => {
   const now = 1000000;
   const models = { difficultyBaseline: { predict: (word) => (word === "hard" ? 0.9 : 0.1) }, interferenceModel: null, responseTimeBaseline: null };
   const hard = { word: "hard", level: 4 };
   const easy = { word: "easy", level: 4 };
 
-  for (const category of ["incorrect", "learning"]) {
-    const weightHard = L.computeSelectionWeight(hard, null, models, now, category);
-    const weightEasy = L.computeSelectionWeight(easy, null, models, now, category);
-    assert.ok(
-      weightEasy > weightHard,
-      `category '${category}' should favor the EASIER (lower-risk) word, to clear it off the backlog first (easy=${weightEasy}, hard=${weightHard})`
-    );
-  }
+  const weightHard = L.computeSelectionWeight(hard, null, models, now, "learning");
+  const weightEasy = L.computeSelectionWeight(easy, null, models, now, "learning");
+  assert.ok(
+    weightEasy > weightHard,
+    `category 'learning' should favor the predicted-EASIER word, to clear it off the backlog first (easy=${weightEasy}, hard=${weightHard})`
+  );
+});
+
+test("computeSelectionWeight with category 'incorrect' ranks purely by the word's OWN incorrectStreak - NOT predictWordDifficulty's modeled risk at all - so a word the generic model calls 'hard' but has only been personally missed once outranks one the model calls 'easy' but has been missed many times in a row", () => {
+  const now = 1000000;
+  // A baseline that says the OPPOSITE of what incorrectStreak says, to prove
+  // the model's guess has zero influence here: "modelHard" gets flagged
+  // hard by the generic model but has only slipped once for this learner;
+  // "modelEasy" gets flagged easy by the generic model but is this
+  // learner's most entrenched miss.
+  const models = { difficultyBaseline: { predict: (word) => (word === "modelHard" ? 0.9 : 0.1) }, interferenceModel: null, responseTimeBaseline: null };
+  const modelHard = { word: "modelHard", level: 4 };
+  const modelEasy = { word: "modelEasy", level: 4 };
+
+  const weightModelHardButReallyOk = L.computeSelectionWeight(modelHard, { incorrectStreak: 1 }, models, now, "incorrect");
+  const weightModelEasyButReallyStuck = L.computeSelectionWeight(modelEasy, { incorrectStreak: 5 }, models, now, "incorrect");
+  assert.ok(
+    weightModelHardButReallyOk > weightModelEasyButReallyStuck,
+    `a word missed only once should outrank one missed 5 times running, regardless of what the generic model guesses about either (once=${weightModelHardButReallyOk}, entrenched=${weightModelEasyButReallyStuck})`
+  );
 });
 
 test("computeSelectionWeight's category direction is purely about which way risk points - the response-time and recency adjustments still apply identically regardless of category", () => {

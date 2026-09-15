@@ -1309,41 +1309,43 @@
     };
   }
 
-  // Turns a word's predicted difficulty (see predictWordDifficulty) into a
-  // full weightedShuffle weight - but which DIRECTION predicted difficulty
-  // pulls the weight depends on `category`:
+  // Turns a word's difficulty into a full weightedShuffle weight - but
+  // WHAT COUNTS AS "difficulty" and which DIRECTION it pulls the weight
+  // both depend on `category`:
   //
-  //   - "new"/"reintroduce" (or omitted): higher predicted risk -> higher
-  //     weight. A never-seen word predicted hard is exactly the one worth
-  //     spending a new-word slot on now, while attention is being allocated
-  //     anyway - surfacing it early is more useful than a new word the
-  //     learner would likely have gotten right regardless.
-  //   - "incorrect"/"learning": LOWER predicted risk -> higher weight.
-  //     These words are already in the review backlog; the goal here is to
-  //     clear the ones closest to mastered off the list fastest (a correct
-  //     answer moves them toward Memorized, a word not shown doesn't), so
-  //     review slots preferentially go to backlog words most likely to be
-  //     answered right. This leaves the genuinely hard backlog words - the
-  //     ones that keep NOT clearing - relatively more prominent in what's
-  //     left over time. (An auto-mode round requests the ENTIRE ranked
-  //     backlog, sliced by session TIME rather than a fixed question count
-  //     - see app.js's testMinutes - so a large backlog isn't fully
-  //     replayed every session either way; what actually keeps the SAME
-  //     easy front from monopolizing every session is the recency dampener
-  //     below, not this direction - see CONFIG's own
-  //     "reviewRecencyFullRecoveryDays" comment.)
+  //   - "new"/"reintroduce" (or omitted): predictWordDifficulty's modeled
+  //     risk (length/level/POS/AI-prior baseline, blended with interference
+  //     and the word's own decayed error rate once it has one) - HIGHER
+  //     risk -> HIGHER weight. A never-seen word predicted hard is exactly
+  //     the one worth spending a new-word slot on now, while attention is
+  //     being allocated anyway.
+  //   - "learning": the SAME modeled risk, but LOWER risk -> HIGHER weight -
+  //     clear the ones closest to mastered off the list fastest.
+  //   - "incorrect": NOT predictWordDifficulty at all - purely this word's
+  //     own incorrectStreak (consecutive times YOU have personally gotten
+  //     it wrong, nothing else), fewer -> HIGHER weight. Every word here
+  //     has already been directly, personally confirmed wrong at least
+  //     once, so this is the one place a generic model (word length,
+  //     curriculum level, an AI-generated guess about how hard the word
+  //     "should" be) has nothing useful left to add and can only get in the
+  //     way - it has no way to know a word the model calls "easy" is one
+  //     THIS learner keeps missing, and blending its guess in anyway is
+  //     exactly what made review feel like it was calling genuinely hard
+  //     words "easy" and stalling on them. "Easiest first" here means what
+  //     it says: ranked by real, observable evidence of how close each
+  //     word is to actually clearing, not a prediction about it.
   //
   // Beyond that baseline pull, two multiplicative adjustments layer on top
-  // exactly as they always have for review words - a slower-than-expected
-  // response time (still a meaningful signal beyond raw correctness:
-  // hesitation on a technically-right answer) nudges the weight up further,
-  // and a temporary dampener right after the word was last tested keeps the
-  // same word or two from monopolizing every round - see CONFIG's own
-  // "reviewRecencyFullRecoveryDays" comment for why this, not the direction
-  // above, is what's responsible for a large backlog getting explored in
-  // DEPTH across sessions instead of replaying the same front repeatedly. A
-  // never-attempted word simply has no response time or last-seen data, so
-  // both adjustments are no-ops for it.
+  // for every category - a slower-than-expected response time (still a
+  // meaningful signal beyond raw correctness: hesitation on a
+  // technically-right answer) nudges the weight up further, and a temporary
+  // dampener right after the word was last tested keeps the same word or
+  // two from monopolizing every round - see CONFIG's own
+  // "reviewRecencyFullRecoveryDays" comment for why this (and the hard
+  // cooldown ahead of it in rankCandidates) is what keeps a large backlog
+  // getting explored in DEPTH across sessions instead of replaying the same
+  // front repeatedly. A never-attempted word simply has no response time or
+  // last-seen data, so both adjustments are no-ops for it.
   //
   // Level balance (see computeLevelBalanceModel) is DELIBERATELY not folded
   // in here as another multiplier, unlike the two adjustments above: now
@@ -1358,8 +1360,14 @@
   // every level with candidates gets a fair share of any given prefix
   // regardless of how this weight alone would have ranked them.
   function computeSelectionWeight(w, history, models, now, category) {
-    const risk = predictWordDifficulty(w.word, w.level, history, models.difficultyBaseline, models.interferenceModel, w.pos);
-    const effectiveRisk = category === "incorrect" || category === "learning" ? 1 - risk : risk;
+    let effectiveRisk;
+    if (category === "incorrect") {
+      const severity = clamp(((history && history.incorrectStreak) || 0) / CONFIG.backlogSeverityCap, 0, 1);
+      effectiveRisk = 1 - severity;
+    } else {
+      const risk = predictWordDifficulty(w.word, w.level, history, models.difficultyBaseline, models.interferenceModel, w.pos);
+      effectiveRisk = category === "learning" ? 1 - risk : risk;
+    }
     let weight = 0.5 + effectiveRisk * 2;
 
     const rel = relativeResponseTime(history, models.responseTimeBaseline);
