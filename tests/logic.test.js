@@ -485,6 +485,73 @@ test("selectQuestions no longer systematically favors long words for review just
   assert.ok(rate > 0.35 && rate < 0.65, `the long word should not dominate the front of the list just for being long (rate=${rate})`);
 });
 
+/* ================= Deterministic dominance: the prediction decides which
+   candidates get chosen (a strict rank cut), not just their odds ================= */
+
+test("selectQuestions deterministically fills a bucket from its clearly-higher-priority candidates every single trial, never passing one over for a clearly-lower-priority one", () => {
+  const historyStore = {};
+  const aiSignals = {};
+  // 10 candidates with clearly distinct, non-tied priorDifficulty (0.05
+  // apart - far more than the noise floor) so there is a single unambiguous
+  // best-10-of-20 answer for category "new" (favors high risk).
+  const pool = [];
+  for (let i = 0; i < 20; i++) {
+    const word = `word${i}`;
+    pool.push(makeWord(word, 4));
+    aiSignals[word] = { priorDifficulty: i * 0.04 }; // 0, 0.04, 0.08, ..., 0.76
+  }
+  const expectedTop10 = new Set(pool.slice(10, 20).map((w) => w.word)); // highest priorDifficulty = words 10..19
+
+  for (let seed = 1; seed <= 50; seed++) {
+    const selection = L.selectQuestions({
+      pool,
+      historyStore,
+      size: 10,
+      ratio: { new: 1, incorrect: 0, learning: 0 },
+      random: seededRandom(seed),
+      aiSignals,
+    });
+    const chosen = new Set(selection.map((w) => w.word));
+    assert.deepEqual(chosen, expectedTop10, `trial seed=${seed} should pick exactly the 10 highest-risk words, got ${[...chosen].join(",")}`);
+  }
+});
+
+test("selectQuestions with levelBalance never lets one level fully crowd out another that still has eligible candidates and weight", () => {
+  // Reproduces a real scenario found while validating deterministic
+  // dominance: many candidates within a bucket that are all near-identical
+  // under the base difficulty model (the common case once a learner has a
+  // sizeable, fairly uniform backlog) used to let level balance's own
+  // multiplier (previously folded straight into computeSelectionWeight)
+  // completely dominate a now-deterministic sort and zero out every level
+  // but one - the opposite of "balance". mergeByLevelShare's proportional
+  // interleave (see logic.js) is what fixed it.
+  const levelA = makePool(60, 4, "a");
+  const levelB = makePool(60, 5, "b");
+  const levelC = makePool(60, 6, "c");
+  const pool = levelA.concat(levelB).concat(levelC);
+  const historyStore = {};
+  // Every candidate gets the IDENTICAL attempt shape (near-tied under the
+  // base model) except level A gets far more total attempts than B/C -
+  // exactly the kind of skew that drove the level-balance weight far from
+  // 1 for one level while everything else stayed near-tied.
+  for (const w of levelA) historyStore[w.word.toLowerCase()] = { attempts: 20, correct: 20, incorrect: 0, correctStreak: 0, lastResult: "correct", lastSeen: 0, lastReviewedAt: 0, markedAt: 0 };
+  for (const w of levelB.concat(levelC)) historyStore[w.word.toLowerCase()] = { attempts: 1, correct: 1, incorrect: 0, correctStreak: 0, lastResult: "correct", lastSeen: 0, lastReviewedAt: 0, markedAt: 0 };
+
+  const selection = L.selectQuestions({
+    pool,
+    historyStore,
+    size: 90,
+    ratio: { new: 0, incorrect: 0, learning: 1 },
+    random: seededRandom(3),
+    levelBalance: true,
+  });
+  const byLevel = { 4: 0, 5: 0, 6: 0 };
+  for (const w of selection) byLevel[w.level] += 1;
+  assert.ok(byLevel[4] > 0 && byLevel[5] > 0 && byLevel[6] > 0, `every level should keep some representation, got ${JSON.stringify(byLevel)}`);
+  // Not just "some" - a genuinely proportional share, not a token 1-2 words.
+  assert.ok(byLevel[5] >= 15 && byLevel[6] >= 15, `under-practiced levels should get a real share, not a token amount (got ${JSON.stringify(byLevel)})`);
+});
+
 test("weightedShuffle picks the higher-weight item first far more often than chance, but not every single time", () => {
   const items = ["slow", "fast"];
   const weights = [3.0, 0.3];

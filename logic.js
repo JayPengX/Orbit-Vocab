@@ -651,16 +651,23 @@
           own empirical error rate, shrunk toward (A)+(B) by how much data
           it has (CONFIG.difficultyOwnDataShrinkageK). The single most
           informative signal available once it exists at all.
-       D. IS SELECTION ITSELF BALANCED? - two adjustments applied after a
-          risk score exists, in computeSelectionWeight: which DIRECTION
-          risk should push the weight depends on the category (new words
-          favor high risk, to front-load likely-to-be-missed words while
-          they're still being introduced; incorrect/learning words favor
-          LOW risk, to clear near-mastered backlog words off the list
-          fastest - see that function's own comment), and
-          computeLevelBalanceModel keeps a multi-level auto-mode round from
-          letting one selected level dominate just because its words score
-          differently under (A)-(C).
+       D. IS SELECTION ITSELF BALANCED? - two adjustments, one inside
+          computeSelectionWeight and one alongside it in rankCandidates:
+          which DIRECTION risk should push the weight depends on the
+          category (new words favor high risk, to front-load likely-to-be-
+          missed words while they're still being introduced; incorrect/
+          learning words favor LOW risk, to clear near-mastered backlog
+          words off the list fastest - see computeSelectionWeight's own
+          comment); and, separately, rankCandidates interleaves per-level
+          rankings by computeLevelBalanceModel's share weights (see
+          mergeByLevelShare) so a multi-level auto-mode round can't let one
+          selected level crowd out another just because its words score
+          differently under (A)-(C) - kept as a proportional-allocation
+          step rather than folded into the weight itself, precisely
+          because rankCandidates now sorts deterministically (see its own
+          comment): a per-level MULTIPLIER small enough to be a reasonable
+          nudge under a weighted-random draw could otherwise zero out an
+          entire level once nothing is left to chance.
 
      (A) and (B) are the two original, independent signals grounded in how
      word memorization is actually understood to work, not a single
@@ -961,11 +968,20 @@
   // and a temporary dampener right after the word was last tested keeps the
   // same word or two from monopolizing every round. A never-attempted word
   // simply has no response time or last-seen data, so both adjustments are
-  // no-ops for it. Finally, `models.levelBalance` (see
-  // computeLevelBalanceModel), when present, multiplies in a per-level
-  // boost/dampen so a multi-level auto-mode round doesn't let one selected
-  // level dominate just because its words score differently under the
-  // difficulty model.
+  // no-ops for it.
+  //
+  // Level balance (see computeLevelBalanceModel) is DELIBERATELY not folded
+  // in here as another multiplier, unlike the two adjustments above: now
+  // that rankCandidates sorts candidates deterministically (prediction
+  // dominates the outcome, not just its odds - see that function's own
+  // comment), a per-level multiplier small enough to be a reasonable
+  // "nudge" under the old weighted-random scheme could completely zero out
+  // an entire level's representation under a deterministic sort the moment
+  // that level's words happened to cluster with a slightly less-favorable
+  // risk - the exact opposite of "balance". rankCandidates instead applies
+  // level balance as a separate proportional-allocation step, guaranteeing
+  // every level with candidates gets a fair share of any given prefix
+  // regardless of how this weight alone would have ranked them.
   function computeSelectionWeight(w, history, models, now, category) {
     const risk = predictWordDifficulty(w.word, w.level, history, models.difficultyBaseline, models.interferenceModel);
     const effectiveRisk = category === "incorrect" || category === "learning" ? 1 - risk : risk;
@@ -977,8 +993,6 @@
     const lastSeen = (history && history.lastSeen) || 0;
     const daysSince = lastSeen ? Math.max(0, (now - lastSeen) / ONE_DAY_MS) : Infinity;
     weight *= clamp(daysSince / CONFIG.reviewRecencyFullRecoveryDays, 0.15, 1);
-
-    if (models.levelBalance) weight *= models.levelBalance.weightOf(w.level);
 
     return weight;
   }
@@ -1067,21 +1081,93 @@
     return withTimestamp.slice(0, Math.max(0, size)).map((x) => x.w);
   }
 
+  // Deterministically sorts one already-grouped list of {w, weight} by
+  // weight descending - shared by rankCandidates's flat (single/no-balance)
+  // path and its per-level path below. `items` must already be pre-shuffled
+  // (see rankCandidates) so the guaranteed-stable Array#sort only ever
+  // reorders genuinely tied weights, never overrides a real difference.
+  function sortByWeightDesc(items) {
+    return items.slice().sort((a, b) => b.weight - a.weight);
+  }
+
+  // Merges several already-best-first-sorted per-level candidate queues
+  // into one list, honoring each level's `shareWeight` proportionally
+  // across every prefix - not just the final total - via a divisor
+  // (Sainte-Laguë-style) apportionment method: repeatedly award the next
+  // pick to whichever level has the smallest (itemsTakenSoFar+1)/weight,
+  // then pop that level's own next-best candidate. This is what lets level
+  // balance guarantee every level with candidates and weight gets a fair
+  // SHARE of any given prefix (the first `target` of a bucket, in
+  // particular), rather than only influencing an eventual full-list
+  // ordering that a deterministic per-word sort could otherwise let one
+  // level dominate entirely (see computeSelectionWeight's own comment on
+  // why level balance moved out of the per-word weight and into this
+  // separate step). A level's OWN internal order (best-first by weight) is
+  // always preserved - this only decides the INTERLEAVING between levels.
+  function mergeByLevelShare(queuesByLevel, shareWeightOf) {
+    const levels = Object.keys(queuesByLevel).filter((l) => queuesByLevel[l].length);
+    const taken = {};
+    for (const l of levels) taken[l] = 0;
+    const merged = [];
+    while (levels.some((l) => taken[l] < queuesByLevel[l].length)) {
+      let bestLevel = null;
+      let bestScore = Infinity;
+      for (const l of levels) {
+        if (taken[l] >= queuesByLevel[l].length) continue;
+        const w = Math.max(1e-6, shareWeightOf(l));
+        const score = (taken[l] + 1) / w;
+        if (score < bestScore) {
+          bestScore = score;
+          bestLevel = l;
+        }
+      }
+      merged.push(queuesByLevel[bestLevel][taken[bestLevel]]);
+      taken[bestLevel] += 1;
+    }
+    return merged;
+  }
+
   // Orders a bucket's candidates by predicted difficulty (see
-  // computeSelectionWeight) via a WEIGHTED random draw, never a rigid sort
-  // - a favored word still has some chance of coming up late, a
-  // disfavored one is never guaranteed the same slot every round.
-  // `category` ("new"/"incorrect"/"learning", forwarded straight to
+  // computeSelectionWeight): a STRICT descending sort by weight, so the
+  // prediction directly DECIDES which candidates make the cut, rather than
+  // merely nudging a random draw's odds - a favored word is never edged
+  // out by a disfavored one just because a weighted coin flip happened to
+  // go the other way (the earlier weightedShuffle-based design's whole
+  // point, deliberately reversed here on request: the model should
+  // dominate the outcome, not just its probability). Only genuinely TIED
+  // weights (the common case with no data anywhere yet - every word then
+  // gets an identical weight) still vary round to round: `words` is
+  // pre-shuffled before sorting, and JS's Array#sort is stable (ECMA-262
+  // guarantees this), so equal-weight items keep whatever relative order
+  // the pre-shuffle gave them instead of always falling back to array
+  // order - real weight differences are never overridden by that
+  // pre-shuffle, only ties are ever affected by it. `category`
+  // ("new"/"incorrect"/"learning", forwarded straight to
   // computeSelectionWeight) is what decides WHICH direction "favored"
   // means for this particular bucket - see that function's own comment.
-  // With no data anywhere yet, every word gets an identical weight, which
-  // makes this a plain uniform shuffle in every way that matters.
+  //
+  // When `models.levelBalance` is present (auto mode across 2+ levels -
+  // see computeLevelBalanceModel), candidates are first grouped and
+  // ranked PER LEVEL (still a strict, dominant sort within each level),
+  // then interleaved via mergeByLevelShare so every level keeps a fair,
+  // proportional share of the result instead of the highest-scoring level
+  // crowding out the others entirely - see that function's own comment.
   function rankCandidates(words, historyStore, random, now, models, category) {
-    const withMeta = words.map((w) => {
+    const withMeta = shuffle(words, random).map((w) => {
       const h = historyFor(historyStore, w.word);
       return { w: w, weight: computeSelectionWeight(w, h, models, now, category) };
     });
-    return weightedShuffle(withMeta.map((x) => x.w), withMeta.map((x) => x.weight), random);
+
+    if (!models.levelBalance) return sortByWeightDesc(withMeta).map((x) => x.w);
+
+    const byLevel = {};
+    for (const item of withMeta) {
+      const lvl = item.w.level;
+      (byLevel[lvl] = byLevel[lvl] || []).push(item);
+    }
+    const sortedByLevel = {};
+    for (const lvl of Object.keys(byLevel)) sortedByLevel[lvl] = sortByWeightDesc(byLevel[lvl]).map((x) => x.w);
+    return mergeByLevelShare(sortedByLevel, (lvl) => models.levelBalance.weightOf(Number(lvl)));
   }
 
   // Fills bucket targets from ranked candidate lists, then redistributes
