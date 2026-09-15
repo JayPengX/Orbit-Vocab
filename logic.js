@@ -449,7 +449,19 @@
       // already-memorized word doesn't look freshly-unlearned the moment
       // this ships.
       if (raw.masteryAlpha == null || raw.masteryBeta == null) {
-        Object.assign(merged, computeWordMastery(merged));
+        applyMastery(merged, computeWordMastery(merged));
+      } else {
+        // Already has a cached mastery value - normally left alone (it's
+        // more trustworthy than a fresh recompute, see recalibrateWordMastery's
+        // own comment), EXCEPT that an earlier version of the seeding path
+        // above could under-seed a long-established word from data that
+        // predates recalibrateWordMastery's older-evidence fix, and an
+        // already-seeded entry is never touched by that "== null" branch
+        // again. This corrects that specific under-seed upward - and only
+        // upward - on every load, so it's safe to leave running permanently
+        // rather than needing a one-time flag.
+        const recalibrated = recalibrateWordMastery(merged);
+        if (recalibrated) applyMastery(merged, recalibrated);
       }
       return merged;
     }
@@ -469,7 +481,7 @@
       lastSeen: raw.lastSeen || 0,
       firstSeen: raw.lastSeen || 0,
     });
-    Object.assign(migrated, computeWordMastery(migrated));
+    applyMastery(migrated, computeWordMastery(migrated));
     return migrated;
   }
 
@@ -641,11 +653,12 @@
   //   3. no ring buffer at all - fall back to a Laplace-smoothed lifetime
   //      ratio (correct/attempts), which at least beats assuming 50/50 for
   //      data that's known to be lopsided, even with no ordering information.
-  function computeWordMastery(history) {
-    const h = history || {};
-    if (typeof h.masteryAlpha === "number" && typeof h.masteryBeta === "number") {
-      return { alpha: h.masteryAlpha, beta: h.masteryBeta };
-    }
+  //
+  // Split out from computeWordMastery below so recalibrateWordMastery can
+  // recompute this "ground truth from raw evidence" value even for an entry
+  // that ALREADY has cached masteryAlpha/masteryBeta, to check whether that
+  // cached value under-sells what the raw counts actually support.
+  function deriveMasteryFromEvidence(h) {
     const recent = Array.isArray(h.recentAttempts) ? h.recentAttempts : [];
     // Prefer an explicit `correct` count; fall back to deriving it from
     // `incorrect` (the same convention computeDifficultyBaseline's own
@@ -672,6 +685,50 @@
       alpha: CONFIG.masteryPriorAlpha + ratio * attempts,
       beta: CONFIG.masteryPriorBeta + (1 - ratio) * attempts,
     };
+  }
+
+  function computeWordMastery(history) {
+    const h = history || {};
+    if (typeof h.masteryAlpha === "number" && typeof h.masteryBeta === "number") {
+      return { alpha: h.masteryAlpha, beta: h.masteryBeta };
+    }
+    return deriveMasteryFromEvidence(h);
+  }
+
+  // Writes a {alpha, beta} pair (from computeWordMastery/deriveMasteryFromEvidence/
+  // recalibrateWordMastery, all of which return that shape) into a history
+  // object's actual masteryAlpha/masteryBeta fields - a plain Object.assign
+  // of the result would instead add stray top-level `alpha`/`beta` keys that
+  // nothing reads, silently leaving the real fields untouched.
+  function applyMastery(target, mastery) {
+    if (!mastery) return target;
+    target.masteryAlpha = mastery.alpha;
+    target.masteryBeta = mastery.beta;
+    return target;
+  }
+
+  // One-way corrective pass: recomputes what deriveMasteryFromEvidence would
+  // say from an entry's raw counts (attempts/correct/incorrect/recentAttempts)
+  // and, if that reads as MORE confident than whatever's currently cached in
+  // masteryAlpha/masteryBeta, replaces the cache with it. Never moves the
+  // estimate DOWN - only ever corrects an under-seed upward - so it can't
+  // accidentally undo real, more-trustworthy evidence a word has earned
+  // since (a genuine recent slip that legitimately lowered its mastery is
+  // left alone). This exists because an earlier version of the migration
+  // seed (see deriveMasteryFromEvidence's own comment on olderAttempts)
+  // could under-seed a long-established word from stored data that predates
+  // that fix, and unlike a fresh migration (which only seeds an entry with
+  // NO cached value at all), those entries already have a - too low -
+  // cached masteryAlpha/masteryBeta and so are never touched by ordinary
+  // seeding again. Cheap (bounded by the recentAttempts ring buffer size)
+  // and idempotent, so it's safe to run on every load rather than needing a
+  // one-time flag - see migrateWordEntry, its only caller.
+  function recalibrateWordMastery(h) {
+    if (typeof h.masteryAlpha !== "number" || typeof h.masteryBeta !== "number") return null;
+    const currentMean = h.masteryAlpha / (h.masteryAlpha + h.masteryBeta);
+    const recalibrated = deriveMasteryFromEvidence(h);
+    const recalibratedMean = recalibrated.alpha / (recalibrated.alpha + recalibrated.beta);
+    return recalibratedMean > currentMean ? recalibrated : null;
   }
 
   // Posterior probability of getting this word right, per computeWordMastery.
@@ -1853,6 +1910,8 @@
     isMarked: isMarked,
     classifyState: classifyState,
     computeWordMastery: computeWordMastery,
+    recalibrateWordMastery: recalibrateWordMastery,
+    applyMastery: applyMastery,
     masteryMean: masteryMean,
     isDueForReview: isDueForReview,
     recentWrongAnswersOf: recentWrongAnswersOf,

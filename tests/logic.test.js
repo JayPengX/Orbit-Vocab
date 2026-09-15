@@ -1746,6 +1746,51 @@ test("migrateWordEntry is idempotent on an already-current entry and fills any n
   assert.deepEqual(remigrated.recentAttempts, current.recentAttempts);
 });
 
+test("migrateWordEntry actually writes masteryAlpha/masteryBeta (not stray top-level alpha/beta keys) when seeding a pre-mastery entry (regression: applyMastery exists specifically because a bare Object.assign of computeWordMastery's {alpha,beta} result silently missed the real fields)", () => {
+  const preMasteryEntry = {
+    word: "seedme", level: 4, length: 6, attempts: 2, correct: 2, incorrect: 0,
+    recentAttempts: [{ correct: true }, { correct: true }], lastResult: "correct",
+  };
+  const migrated = L.migrateWordEntry(preMasteryEntry, "seedme", 4, 6);
+  assert.equal(typeof migrated.masteryAlpha, "number");
+  assert.equal(typeof migrated.masteryBeta, "number");
+  assert.equal(migrated.alpha, undefined, "must not leave a stray top-level 'alpha' key behind");
+  assert.equal(migrated.beta, undefined, "must not leave a stray top-level 'beta' key behind");
+  assert.equal(L.classifyState(migrated), "memorized");
+});
+
+test("migrateWordEntry recalibrates an already-cached but under-seeded mastery value upward on every load, without touching a legitimately low one", () => {
+  // An entry whose CACHED masteryAlpha/masteryBeta under-reports its real
+  // 4/5 lifetime record (the exact under-seeding scenario computeWordMastery's
+  // older-evidence fix addresses) - simulates data that got the old, buggy
+  // seed before that fix shipped and has not been re-answered since.
+  const underSeeded = {
+    word: "recalme", level: 4, length: 7, attempts: 5, correct: 4, incorrect: 1,
+    recentAttempts: [{ correct: false }, { correct: true }, { correct: true }],
+    lastResult: "correct",
+    masteryAlpha: 2.464125, masteryBeta: 1.336625, // pure ring-buffer replay, no older-evidence credit
+  };
+  assert.equal(L.classifyState(underSeeded), "learning", "sanity check: the under-seeded value itself reads as not-yet-memorized");
+  const recalibrated = L.migrateWordEntry(underSeeded, "recalme", 4, 7);
+  assert.ok(recalibrated.masteryAlpha > underSeeded.masteryAlpha, "recalibration should raise the under-seeded value");
+  assert.equal(L.classifyState(recalibrated), "memorized", "with the older evidence credited, this word's real 4/5 record should read as memorized");
+
+  // A word whose cached value is ALREADY more confident than a coarse
+  // reconstruction from just the raw counts would suggest (e.g. real,
+  // ongoing recordAttempt use this test fixture doesn't fully replay) must
+  // not get pulled DOWN to match the reconstruction - recalibration only
+  // ever corrects an under-seed upward, never the reverse.
+  const alreadyConfident = {
+    word: "stillhard", level: 4, length: 7, attempts: 5, correct: 4, incorrect: 1,
+    recentAttempts: [{ correct: true }, { correct: true }, { correct: false }],
+    lastResult: "incorrect",
+    masteryAlpha: 9, masteryBeta: 1, // mean 0.9 - higher than the raw-evidence reconstruction would give
+  };
+  const untouched = L.migrateWordEntry(alreadyConfident, "stillhard", 4, 7);
+  assert.equal(untouched.masteryAlpha, 9, "a cached value the raw evidence doesn't exceed must be left exactly as-is");
+  assert.equal(untouched.masteryBeta, 1);
+});
+
 test("migrateProgressStore migrates an entire legacy store and preserves per-word data", () => {
   const legacyStore = {
     abandon: { box: 5, due: 111, correct: 4, wrong: 0, lastSeen: 5000 },
