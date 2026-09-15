@@ -495,7 +495,16 @@ async function pushSnapshot() {
     const localSnapshot = buildSyncSnapshotData();
     const doc = await fetchSyncDoc(passcode);
     if (!doc.ok) throw new Error(doc.error);
-    if (doc.exists && doc.payload) {
+    if (!doc.exists) {
+      // This device's own stored passcode already proved it worked once
+      // (create/join both require the doc to exist first) - `exists:false`
+      // turning up here means the sync was deleted from elsewhere (see
+      // vocabSyncDeleteForEveryone), not a malformed/never-valid passcode.
+      // Handled by the caller (see handleRemoteSyncDeletion) rather than
+      // here, so this function's own job stays "push, or explain why not".
+      return { ok: true, pushed: false, remoteDeleted: true };
+    }
+    if (doc.payload) {
       const remote = await decodeSyncPayload(doc.payload);
       const remoteTotal = typeof remote.totalAttempts === "number" ? remote.totalAttempts : 0;
       if (remoteTotal > localSnapshot.totalAttempts) {
@@ -593,6 +602,10 @@ async function runSyncTick() {
   if (dirty || !hasSyncedSinceLoad) {
     const result = await pushSnapshot();
     hasSyncedSinceLoad = true;
+    if (result.ok && result.remoteDeleted) {
+      handleRemoteSyncDeletion();
+      return { ok: true, changed: false };
+    }
     if (!result.ok) {
       setSyncStatus(result.error, true);
     } else if (result.pulledInstead) {
@@ -605,6 +618,10 @@ async function runSyncTick() {
     return { ok: result.ok, changed: !!result.pulledInstead };
   }
   const result = await pullSnapshot();
+  if (result.ok && result.exists === false) {
+    handleRemoteSyncDeletion();
+    return { ok: true, changed: false };
+  }
   if (result.ok && result.applied) {
     setSyncStatus(`已從其他裝置更新學習紀錄（${new Date().toLocaleTimeString("zh-TW")}）`);
   } else if (!result.ok) {
@@ -943,6 +960,10 @@ function vocabSyncNow() {
     if (dirty || !hasSyncedSinceLoad) {
       const result = await pushSnapshot();
       hasSyncedSinceLoad = true;
+      if (result.ok && result.remoteDeleted) {
+        handleRemoteSyncDeletion();
+        return;
+      }
       if (!result.ok) {
         setSyncStatus(result.error, true);
       } else if (result.pulledInstead) {
@@ -955,6 +976,10 @@ function vocabSyncNow() {
       return;
     }
     const result = await pullSnapshot({ force: true });
+    if (result.ok && result.exists === false) {
+      handleRemoteSyncDeletion();
+      return;
+    }
     if (!result.ok) setSyncStatus(result.error, true);
     else setSyncStatus(result.applied ? "已更新為最新的學習紀錄。" : "已是最新。");
   });
@@ -995,6 +1020,19 @@ function performUnlink(statusMessage) {
   dirty = false;
   renderSyncPanel();
   setSyncStatus(statusMessage);
+}
+
+// A device's own stored passcode reaching this point already proved it
+// worked at least once (create/join both require the doc to exist first) -
+// exists:false (see pushSnapshot's remoteDeleted and pullSnapshot's own
+// exists field) turning up on a routine, already-configured tick means the
+// sync was deleted from elsewhere (see vocabSyncDeleteForEveryone), not a
+// malformed/never-valid passcode reaching this far. Falls back to
+// local-only exactly like a manual "解除同步" would (see performUnlink),
+// plus the same backup-restore offer every other unlink path gives.
+function handleRemoteSyncDeletion() {
+  performUnlink("同步已被刪除，這台裝置已自動解除同步（本機學習紀錄不受影響）。");
+  promptRestoreBackupIfAny();
 }
 
 async function vocabSyncUnlink() {
