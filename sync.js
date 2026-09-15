@@ -256,6 +256,18 @@ function compactHistory(h, baseMs) {
     // words are simply never marked, and that must round-trip back to
     // exactly 0, not "marked at export time".
     h.markedAt ? secondsBefore(baseMs, h.markedAt) : null,
+    // Decayed Beta-Bernoulli mastery pseudo-counts (see logic.js's
+    // CONFIG.masteryDecay) - included explicitly, not left for
+    // Logic.migrateWordEntry to re-derive, since this compact format only
+    // ever carries the last RECENT_ATTEMPTS_SYNC_CAP (3) attempts: deriving
+    // mastery from just those on the receiving device would throw away
+    // everything before them, understating a long track record the same
+    // way omitting correctStreak above would have. Rounded, not truncated
+    // to an integer, so the receiving device gets back the same posterior
+    // mean (a stray fraction here doesn't shift classifyState's threshold
+    // decision).
+    typeof h.masteryAlpha === "number" ? Math.round(h.masteryAlpha * 1000) / 1000 : null,
+    typeof h.masteryBeta === "number" ? Math.round(h.masteryBeta * 1000) / 1000 : null,
   ];
 }
 function expandHistory(tuple, baseMs) {
@@ -264,7 +276,7 @@ function expandHistory(tuple, baseMs) {
   const recentAttempts = (tuple[7] || []).map((t) => expandAttempt(t, baseMs));
   const lastSeen = baseMs - (tuple[5] || 0) * 1000;
   const newestAttempt = recentAttempts.length ? recentAttempts[recentAttempts.length - 1] : null;
-  return {
+  const expanded = {
     attempts: attempts,
     correct: correct,
     incorrect: Math.max(0, attempts - correct),
@@ -281,6 +293,14 @@ function expandHistory(tuple, baseMs) {
     lastReviewedAt: typeof tuple[8] === "number" ? baseMs - tuple[8] * 1000 : 0,
     markedAt: typeof tuple[9] === "number" ? baseMs - tuple[9] * 1000 : 0,
   };
+  // A snapshot from before masteryAlpha/masteryBeta existed has no
+  // tuple[10]/tuple[11] at all - leave them unset rather than guessing, so
+  // Logic.migrateWordEntry's own fallback (replay recentAttempts, or a
+  // Laplace-smoothed lifetime ratio) derives them instead of this silently
+  // handing over a wrong prior.
+  if (typeof tuple[10] === "number") expanded.masteryAlpha = tuple[10];
+  if (typeof tuple[11] === "number") expanded.masteryBeta = tuple[11];
+  return expanded;
 }
 
 function compactProgressForSync(progress, baseMs) {

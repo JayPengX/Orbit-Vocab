@@ -1529,7 +1529,7 @@ const REVIEWLIST_SORT_OPTIONS = {
   learning: [
     { value: "slow", label: "反應時間（慢到快）" },
     { value: "tries", label: "嘗試次數（多到少）" },
-    { value: "streak", label: "連續正確次數（少到多）" },
+    { value: "streak", label: "熟練度（低到高）" },
     { value: "recent", label: "最近練習（新到舊）" },
     { value: "oldest", label: "最近練習（舊到新）" },
     { value: "az", label: "字母順序 A→Z" },
@@ -1558,7 +1558,10 @@ function sortReviewListItems(items, mode) {
       arr.sort((a, b) => (b.detail.incorrect || 0) - (a.detail.incorrect || 0));
       break;
     case "streak":
-      arr.sort((a, b) => a.detail.correctStreak - b.detail.correctStreak);
+      // Least-mastered first (see logic.js's masteryMean) - value kept as
+      // "streak" since it's just this list's stored sort-mode key, not
+      // user-facing.
+      arr.sort((a, b) => (a.detail.masteryMean || 0) - (b.detail.masteryMean || 0));
       break;
     case "recent":
       arr.sort((a, b) => b.lastSeen - a.lastSeen);
@@ -1594,7 +1597,7 @@ function sortReviewListItems(items, mode) {
 function buildWordCard(detail, showWrongInfo) {
   const metaParts = showWrongInfo
     ? [`已作答 ${detail.attempts} 次`, `平均反應時間 ${formatMs(detail.avgCorrectResponseMs)}`]
-    : [`連續正確 ${detail.correctStreak} / 2`, `平均反應時間 ${formatMs(detail.avgCorrectResponseMs)}`];
+    : [`熟練度 ${Math.round((detail.masteryMean || 0) * 100)}%`, `平均反應時間 ${formatMs(detail.avgCorrectResponseMs)}`];
 
   return `
     <div class="word-card">
@@ -2413,7 +2416,7 @@ function renderWordTable() {
         </td>
         <td>${detail.level}</td>
         <td>${detail.correct} / ${detail.incorrect}</td>
-        <td title="連續答對次數，答錯會歸零；連續 2 次才算已熟記">${detail.correctStreak}</td>
+        <td title="根據近期作答估算的熟練機率，答錯一次會立即拉低但不會歸零；累積到一定信心才算已熟記">${Math.round((detail.masteryMean || 0) * 100)}%</td>
         <td>${formatMs(detail.avgCorrectResponseMs)}</td>
         <td>${renderWrongAnswerCell(detail)}</td>
         <td><span class="state-badge ${detail.state}">${STATE_LABELS[detail.state]}</span></td>
@@ -2421,10 +2424,10 @@ function renderWordTable() {
     .join("");
 
   container.innerHTML = `
-    <p class="hint">連續答對 2 次算「已熟記」，答錯一次會重新歸零。滑鼠移到「最近錯誤」可看更多紀錄。</p>
+    <p class="hint">「熟練度」是根據近期作答估算的答對機率，答錯的當下仍會顯示「答錯待複習」，但不會讓熟練度歸零 - 下一次答對就有機會直接回到「已熟記」。滑鼠移到「最近錯誤」可看更多紀錄。</p>
     <div class="word-table-wrap">
       <table class="word-table">
-        <thead><tr><th>單字</th><th>等級</th><th>對／錯</th><th title="連續答對次數">連續正確</th><th>平均反應時間</th><th>最近錯誤</th><th>狀態</th></tr></thead>
+        <thead><tr><th>單字</th><th>等級</th><th>對／錯</th><th title="根據近期作答估算的熟練機率">熟練度</th><th>平均反應時間</th><th>最近錯誤</th><th>狀態</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>

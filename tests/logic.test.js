@@ -1379,26 +1379,64 @@ test("predictWordDifficulty leans toward a word's OWN empirical error rate as re
   assert.ok(risk20 > baseline.predict(), "with plenty of its own (bad) data, the word's own record should dominate the generic 0.1 baseline");
 });
 
-test("computeOwnRecencyWeightedErrorRate weighs recent attempts more heavily than old ones, in both directions", () => {
-  assert.equal(L.computeOwnRecencyWeightedErrorRate(null), null);
-  assert.equal(L.computeOwnRecencyWeightedErrorRate({ recentAttempts: [] }), null);
+/* ================= Decayed Bayesian mastery (computeWordMastery/masteryMean) -
+   replaces the old raw "2 correct in a row" streak as classifyState's
+   memorized/learning boundary; see CONFIG's own "masteryDecay" comment for why. ================= */
 
-  // Used to struggle, now consistently correct - recency-weighted rate
-  // should read as LOW despite an even 50/50 lifetime split.
+test("computeWordMastery falls back to a Laplace-smoothed lifetime ratio when there's no recentAttempts ring buffer, deriving 'correct' from 'incorrect' if that's all a fixture sets", () => {
+  assert.deepEqual(L.computeWordMastery(null), { alpha: L.CONFIG.masteryPriorAlpha, beta: L.CONFIG.masteryPriorBeta });
+  assert.deepEqual(L.computeWordMastery({ attempts: 0 }), { alpha: L.CONFIG.masteryPriorAlpha, beta: L.CONFIG.masteryPriorBeta });
+
+  const oftenWrong = L.computeWordMastery({ attempts: 10, incorrect: 9 });
+  const rarelyWrong = L.computeWordMastery({ attempts: 10, incorrect: 1 });
+  assert.ok(oftenWrong.alpha / (oftenWrong.alpha + oftenWrong.beta) < rarelyWrong.alpha / (rarelyWrong.alpha + rarelyWrong.beta));
+});
+
+test("computeWordMastery replays a recentAttempts ring buffer through the same decay recurrence as recordAttempt, so recency still matters without a cached masteryAlpha/masteryBeta", () => {
   const improving = { recentAttempts: [
     { correct: false }, { correct: false }, { correct: false }, { correct: false },
     { correct: true }, { correct: true }, { correct: true }, { correct: true },
   ] };
-  const improvingRate = L.computeOwnRecencyWeightedErrorRate(improving);
-  assert.ok(improvingRate < 0.5, `recently-improved word should read as lower risk than a flat 50% lifetime rate (got ${improvingRate})`);
-
-  // Used to be easy, now consistently wrong - the reverse should hold.
   const slipping = { recentAttempts: [
     { correct: true }, { correct: true }, { correct: true }, { correct: true },
     { correct: false }, { correct: false }, { correct: false }, { correct: false },
   ] };
-  const slippingRate = L.computeOwnRecencyWeightedErrorRate(slipping);
-  assert.ok(slippingRate > 0.5, `recently-slipping word should read as higher risk than a flat 50% lifetime rate (got ${slippingRate})`);
+  const improvingMean = L.masteryMean(improving);
+  const slippingMean = L.masteryMean(slipping);
+  assert.ok(improvingMean > 0.5, `recently-improved word should read as HIGHER mastery than a flat 50% lifetime rate (got ${improvingMean})`);
+  assert.ok(slippingMean < 0.5, `recently-slipping word should read as LOWER mastery than a flat 50% lifetime rate (got ${slippingMean})`);
+});
+
+test("classifyState: a word with a long, strong track record survives a single slip and returns to 'memorized' on the very next correct answer - not stuck needing a fresh 2-streak like a brand new word would", () => {
+  const h = L.createEmptyWordHistory("steady", 4, 6);
+  const results = [];
+  for (let i = 0; i < 10; i++) results.push({ correct: true });
+  play(h, results);
+  assert.equal(L.classifyState(h), "memorized", "10 straight corrects should be solidly memorized");
+
+  play(h, [{ correct: false }]);
+  assert.equal(L.classifyState(h), "incorrect", "the miss itself is still immediately flagged incorrect");
+
+  play(h, [{ correct: true }]);
+  assert.equal(
+    L.classifyState(h),
+    "memorized",
+    "one correct answer after a single slip in an otherwise strong history should be enough to restore Memorized"
+  );
+});
+
+test("classifyState: a word answered correctly ~60% of the time (the noisy middle band a raw 2-streak flails on) settles into 'learning' once enough mixed evidence has accumulated, rather than reading as confidently memorized", () => {
+  const h = L.createEmptyWordHistory("middling", 4, 8);
+  // Deterministic 60% pattern (9/15), ending on a correct answer so the
+  // final classifyState reflects the mastery estimate rather than the
+  // "just missed it" incorrect branch. An early sub-sequence CAN still
+  // legitimately read as "memorized" for a beat (two-in-a-row from a fresh
+  // word is meant to, see the dedicated 2-streak test above) - what this
+  // test checks is that sustained ~60% inconsistency settles the estimate
+  // back down, not that it never crosses the bar even momentarily.
+  const pattern = [true, true, false, true, false, true, true, false, false, true, false, true, false, true, true];
+  for (const correct of pattern) play(h, [{ correct: correct }]);
+  assert.equal(L.classifyState(h), "learning");
 });
 
 test("predictWordDifficulty uses the recency-weighted rate (not the flat lifetime ratio) once a history has a recentAttempts ring buffer", () => {

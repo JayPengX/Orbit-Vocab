@@ -29,12 +29,46 @@
     // buffer is, to keep storage bounded across thousands of words.
     maxRecentAttempts: 12,
 
-    // A word is Memorized the moment its current correct streak reaches
-    // this many in a row; any single wrong answer resets the streak to 0
-    // (and the word immediately reads as "incorrect" again). Deliberately
-    // simple and purely correctness-driven - no score, no confidence
-    // ramp, no timing gate on the label itself.
-    memorizedStreak: 2,
+    // A word's "memorized vs. still learning" label is driven by a decayed
+    // Bayesian (Beta-Bernoulli) estimate of how likely you are to get it
+    // right - not a raw "N correct in a row" streak. Every attempt updates
+    // two running pseudo-counts, masteryAlpha (weight of evidence for
+    // "correct") and masteryBeta (weight of evidence for "incorrect") - see
+    // recordAttempt - by first shrinking the PREVIOUS counts toward 0 by
+    // masteryDecay, then adding 1 to whichever count matches this attempt's
+    // result. That gives two things a raw streak can't: (1) old evidence
+    // fades out smoothly instead of being remembered forever or wiped in
+    // one shot, and (2) a word with a long, strong track record survives
+    // ONE recent slip without being thrown all the way back to needing a
+    // fresh 2-in-a-row the way a brand new word would - a wrong answer still
+    // immediately reads as "incorrect" for that answer itself (see
+    // classifyState), but the very NEXT correct answer can restore
+    // "memorized" right away instead of requiring two more. This is what
+    // fixes the "the app can't seem to make up its mind about words I get
+    // right 55-70% of the time" problem: a raw 2-streak is at its most
+    // erratic exactly in that middle accuracy band (two-in-a-row is neither
+    // reliably close nor reliably far), while a smoothed, recency-weighted
+    // probability degrades gracefully instead of flipping on every other
+    // answer.
+    masteryDecay: 0.85,
+    // Where masteryAlpha/masteryBeta start before this word has any real
+    // attempts. Deliberately flat/uninformative (50/50) rather than
+    // seeded from the objective difficulty baseline (length/level/POS/
+    // doubled-letter/AI prior - see computeDifficultyBaseline): that
+    // baseline is already blended in separately by predictWordDifficulty,
+    // so duplicating it here would double-count it for a freshly-attempted
+    // word. This prior only needs to get out of the way quickly once real
+    // attempts start arriving, not to be a second cold-start guess.
+    masteryPriorAlpha: 1,
+    masteryPriorBeta: 1,
+    // The posterior mean (masteryAlpha / (masteryAlpha + masteryBeta)) must
+    // clear this bar for classifyState to call a word "memorized". Chosen so
+    // the existing invariant "two correct answers in a row from a fresh
+    // word reaches Memorized" still holds (two straight corrects from the
+    // neutral prior above land comfortably past this bar), while a single
+    // slip inside an otherwise well-established track record no longer
+    // resets the estimate all the way back to zero.
+    masteryMasteredThreshold: 0.72,
 
     // Smoothing factor for the per-word running-average correct response
     // time (avgCorrectResponseMs). Used only for review-priority ranking
@@ -166,14 +200,16 @@
     // them - similarity to a single struggling word is a coincidence, not a
     // pattern, until there are a few to compare against.
     minStruggleWordsForInterference: 3,
-    // Shrinkage constant for blending a word's OWN empirical error rate
-    // (once it's actually been attempted) with the objective baseline (see
-    // predictWordDifficulty) - attempts/(attempts+K) is how much its own
-    // track record is trusted over the baseline prediction. Deliberately
-    // much smaller than difficultyShrinkageK above: a handful of attempts
-    // on THIS specific word is far more informative about it than a
-    // handful of samples in a 2-3-way group bucket is about that group, so
-    // it should earn trust faster.
+    // Shrinkage constant for blending a word's OWN empirical risk (1 minus
+    // its decayed mastery posterior mean - see masteryDecay above and
+    // computeWordMastery) with the objective baseline (see
+    // predictWordDifficulty) - concentration/(concentration+K), where
+    // concentration is masteryAlpha+masteryBeta, is how much its own track
+    // record is trusted over the baseline prediction. Deliberately much
+    // smaller than difficultyShrinkageK above: a handful of attempts on
+    // THIS specific word is far more informative about it than a handful of
+    // samples in a 2-3-way group bucket is about that group, so it should
+    // earn trust faster.
     difficultyOwnDataShrinkageK: 3,
     // How much of a word's predicted difficulty comes from the objective
     // baseline (length + curriculum level + orthographic irregularity -
@@ -193,25 +229,13 @@
     // similarity is still real signal on its own and shouldn't be discarded
     // just because AI signals are also available.
     difficultySemanticWeight: 0.3,
-    // How much more heavily a MORE RECENT attempt counts than an older one
-    // when computing a word's own empirical error rate (see
-    // computeOwnRecencyWeightedErrorRate) - each attempt back through
-    // history.recentAttempts (newest first) counts this fraction of the one
-    // after it. A word the learner used to miss but has gotten right the
-    // last several times in a row should read as LOW risk now, not still be
-    // dragged down by mistakes from long ago just because the lifetime
-    // ratio hasn't caught up - and the reverse: a word that used to be easy
-    // but has recently started slipping should read as risky NOW, not hide
-    // behind an old streak. 1 would weight every attempt equally (the old
-    // flat lifetime-ratio behavior); lower values lean harder on the most
-    // recent attempts.
-    difficultyRecencyDecay: 0.85,
 
     // ---- Spaced-repetition scheduling (see recordAttempt's SM-2-style
     // interval/ease update, and isDueForReview) ----
     // A "Memorized" word (see classifyState) used to be retired from
-    // selection FOREVER the moment its streak hit memorizedStreak - no
-    // forgetting curve, no re-check that it actually stuck. These fields
+    // selection FOREVER the moment its mastery estimate crossed
+    // masteryMasteredThreshold - no forgetting curve, no re-check that it
+    // actually stuck. These fields
     // give every word its own review schedule (a simplified SM-2: a
     // correct answer grows the interval before it's due again, scaled by
     // an ease factor that itself grows slightly with each success and
@@ -351,6 +375,17 @@
       // miss (wrong several times running) apart from a one-off slip,
       // something a bare "state === incorrect" flag can't distinguish.
       incorrectStreak: 0,
+      // Decayed Beta-Bernoulli pseudo-counts driving the "memorized" label
+      // and the own-data half of predictWordDifficulty - see CONFIG's own
+      // "masteryDecay" comment and recordAttempt/computeWordMastery below.
+      // Left unset (not seeded to the neutral prior here) until an actual
+      // recordAttempt establishes them: that's what lets computeWordMastery
+      // tell "a real word with zero decayed evidence yet" apart from "a
+      // history whose attempts/correct/incorrect were set some OTHER way"
+      // (an older import, a hand-built object) and derive an estimate from
+      // those raw counts instead of silently reporting a stale 50/50.
+      masteryAlpha: null,
+      masteryBeta: null,
       // ---- Spaced-repetition scheduling (see CONFIG's own comment and
       // recordAttempt) - dueAt 0 means "due now", same as a brand new word,
       // which is exactly right: nothing to schedule yet. ----
@@ -404,14 +439,26 @@
       // Already current-ish shape (v2 or later) - fill gaps only. Older
       // v2 entries may carry now-unused fields (e.g. inWrongList, a
       // score/confidence breakdown) - harmless to keep around unused.
-      return Object.assign({}, base, raw);
+      const merged = Object.assign({}, base, raw);
+      // An entry from before masteryAlpha/masteryBeta existed (any real
+      // stored data as of this change) would otherwise silently fall back
+      // to base's neutral prior and get PERMANENTLY stuck there - recordAttempt
+      // only seeds the prior when the field isn't a number yet, and this
+      // merge just made it one. Seed it once here instead, from whatever
+      // evidence the entry already carries (see computeWordMastery), so an
+      // already-memorized word doesn't look freshly-unlearned the moment
+      // this ships.
+      if (raw.masteryAlpha == null || raw.masteryBeta == null) {
+        Object.assign(merged, computeWordMastery(merged));
+      }
+      return merged;
     }
 
     // Legacy v1 shape from the original Leitner-box dictation/review modes.
     const correct = raw.correct || 0;
     const wrong = raw.wrong || 0;
     const attempts = correct + wrong;
-    return Object.assign({}, base, {
+    const migrated = Object.assign({}, base, {
       attempts: attempts,
       correct: correct,
       incorrect: wrong,
@@ -422,6 +469,8 @@
       lastSeen: raw.lastSeen || 0,
       firstSeen: raw.lastSeen || 0,
     });
+    Object.assign(migrated, computeWordMastery(migrated));
+    return migrated;
   }
 
   // Migrates an entire stored progress map ({ word -> entry }) in one pass.
@@ -488,6 +537,15 @@
     if (opts.length != null) history.length = opts.length;
     if (opts.pos != null) history.pos = opts.pos;
     history.recentResponseMs = responseMs;
+
+    // ---- Decayed Beta-Bernoulli mastery update (see CONFIG's own
+    // "masteryDecay" comment) - shrink the previous pseudo-counts toward 0
+    // first, THEN add this attempt's result, so old evidence fades
+    // smoothly instead of a single miss wiping the slate to zero. ----
+    if (typeof history.masteryAlpha !== "number") history.masteryAlpha = CONFIG.masteryPriorAlpha;
+    if (typeof history.masteryBeta !== "number") history.masteryBeta = CONFIG.masteryPriorBeta;
+    history.masteryAlpha = history.masteryAlpha * CONFIG.masteryDecay + (correct ? 1 : 0);
+    history.masteryBeta = history.masteryBeta * CONFIG.masteryDecay + (correct ? 0 : 1);
 
     // ---- Spaced-repetition interval/ease update (simplified SM-2 - see
     // CONFIG's own "Spaced-repetition scheduling" comment) - this is what
@@ -556,19 +614,73 @@
     return !!(history && history.markedAt > 0);
   }
 
-  /* ---------- State classification (simple, streak-based) ---------- */
+  /* ---------- State classification (decayed Bayesian mastery) ---------- */
+
+  // The (alpha, beta) Beta-Bernoulli pseudo-counts behind a word's mastery
+  // estimate - see CONFIG's own "masteryDecay" comment. `history.
+  // masteryAlpha`/`masteryBeta` are the normal, fast path: every real
+  // attempt keeps them current via recordAttempt's own decay update. This
+  // function exists for objects that DIDN'T go through recordAttempt - a
+  // hand-built history (tests, older synced/imported data) - and derives
+  // the same estimate from whatever's available instead of silently
+  // treating it as a neutral coin flip:
+  //   1. masteryAlpha/masteryBeta already present - use them directly.
+  //   2. a recentAttempts ring buffer present - replay it (oldest to
+  //      newest) through the exact same decay recurrence recordAttempt
+  //      uses, from the same neutral prior, so recency still matters.
+  //   3. neither - fall back to a Laplace-smoothed lifetime ratio
+  //      (correct/attempts), which at least beats assuming 50/50 for data
+  //      that's known to be lopsided, even with no ordering information.
+  function computeWordMastery(history) {
+    const h = history || {};
+    if (typeof h.masteryAlpha === "number" && typeof h.masteryBeta === "number") {
+      return { alpha: h.masteryAlpha, beta: h.masteryBeta };
+    }
+    const recent = h.recentAttempts;
+    if (Array.isArray(recent) && recent.length) {
+      let alpha = CONFIG.masteryPriorAlpha;
+      let beta = CONFIG.masteryPriorBeta;
+      for (const a of recent) {
+        alpha = alpha * CONFIG.masteryDecay + (a.correct ? 1 : 0);
+        beta = beta * CONFIG.masteryDecay + (a.correct ? 0 : 1);
+      }
+      return { alpha: alpha, beta: beta };
+    }
+    const attempts = h.attempts || 0;
+    if (!attempts) return { alpha: CONFIG.masteryPriorAlpha, beta: CONFIG.masteryPriorBeta };
+    // Prefer an explicit `correct` count; fall back to deriving it from
+    // `incorrect` (the same convention computeDifficultyBaseline's own
+    // error-rate calc uses) for a partial fixture that only sets one of the
+    // two - a bare {attempts, incorrect} shouldn't silently read as "always
+    // wrong" just because `correct` was never spelled out.
+    const correct = typeof h.correct === "number" ? h.correct : attempts - (h.incorrect || 0);
+    const ratio = clamp(correct / attempts, 0, 1);
+    return {
+      alpha: CONFIG.masteryPriorAlpha + ratio * attempts,
+      beta: CONFIG.masteryPriorBeta + (1 - ratio) * attempts,
+    };
+  }
+
+  // Posterior probability of getting this word right, per computeWordMastery.
+  function masteryMean(history) {
+    const m = computeWordMastery(history);
+    return m.alpha / (m.alpha + m.beta);
+  }
 
   // Four states: "new" (never attempted - not one of the three tracked
   // states, just bookkeeping for the pool that hasn't been touched yet),
   // "incorrect" (most recent answer was wrong), "learning" (correct, but
-  // streak hasn't reached memorizedStreak yet), "memorized" (current
-  // streak >= memorizedStreak). Any single wrong answer immediately drops
-  // a word from "memorized" straight back to "incorrect".
+  // the decayed mastery estimate hasn't cleared masteryMasteredThreshold
+  // yet), "memorized" (it has). Any single wrong answer immediately drops a
+  // word from "memorized" straight back to "incorrect" for that answer -
+  // the mastery estimate itself only takes a proportional hit (see
+  // CONFIG's own "masteryDecay" comment), which is what lets the NEXT
+  // correct answer restore "memorized" without needing two more.
   function classifyState(history) {
     const h = history || {};
     if (!h.attempts) return "new";
     if (h.lastResult === "incorrect") return "incorrect";
-    return (h.correctStreak || 0) >= CONFIG.memorizedStreak ? "memorized" : "learning";
+    return masteryMean(h) >= CONFIG.masteryMasteredThreshold ? "memorized" : "learning";
   }
 
   // Whether a word currently classified "memorized" (see classifyState
@@ -1077,54 +1189,33 @@
     };
   }
 
-  // A word's own empirical error rate, weighting more RECENT attempts more
-  // heavily than older ones (see CONFIG.difficultyRecencyDecay) instead of
-  // one flat lifetime correct/incorrect ratio - a word the learner used to
-  // miss but has gotten right the last several times in a row should read
-  // as low risk NOW, and the reverse for a word that used to be easy but
-  // has recently started slipping. Limited to whatever's still in
-  // history.recentAttempts (see CONFIG.maxRecentAttempts) - older attempts
-  // that already fell out of that ring buffer are simply gone rather than
-  // down-weighted to near-zero, which is a fine approximation since the
-  // decay would have made them negligible anyway. Returns null with no
-  // attempts to weight at all (a brand new word), letting the caller fall
-  // back to the flat lifetime ratio.
-  function computeOwnRecencyWeightedErrorRate(history) {
-    const attempts = (history && history.recentAttempts) || [];
-    if (!attempts.length) return null;
-    let weightedWrong = 0;
-    let totalWeight = 0;
-    let weight = 1;
-    for (let i = attempts.length - 1; i >= 0; i--) {
-      totalWeight += weight;
-      if (!attempts[i].correct) weightedWrong += weight;
-      weight *= CONFIG.difficultyRecencyDecay;
-    }
-    return totalWeight > 0 ? weightedWrong / totalWeight : null;
-  }
-
   // One 0..1-ish predicted difficulty for a word, whether it's never been
   // attempted or has a full history: starts from the objective baseline
   // (or a neutral 0.15 with no baseline data at all yet), then - if this
-  // word itself has been attempted - blends in its own empirical error
-  // rate (recency-weighted - see computeOwnRecencyWeightedErrorRate above,
-  // falling back to the flat lifetime ratio for a bare {attempts,incorrect}
-  // history with no recentAttempts ring buffer) via the same
-  // empirical-Bayes shrinkage idea used inside the baseline's own group
-  // effects (CONFIG.difficultyOwnDataShrinkageK): a word tried once and
-  // missed shouldn't swing straight to "certain risk", but as real attempts
-  // accumulate on THIS word, its own track record increasingly dominates
-  // the generic prediction. That blended objective risk is then combined
-  // with the interference signal, same as before (see
+  // word itself has been attempted - blends in its own empirical risk (1
+  // minus the decayed mastery posterior mean from computeWordMastery/
+  // masteryMean above, which already weighs recent attempts more heavily
+  // than old ones - a word the learner used to miss but has gotten right
+  // the last several times in a row reads as LOW risk now, and the reverse
+  // for a word that used to be easy but has recently started slipping) via
+  // the same empirical-Bayes shrinkage idea used inside the baseline's own
+  // group effects (CONFIG.difficultyOwnDataShrinkageK), trusted in
+  // proportion to the mastery estimate's own pseudo-count concentration
+  // (masteryAlpha+masteryBeta) rather than a raw attempt count: a word tried
+  // once and missed shouldn't swing straight to "certain risk", but as real
+  // attempts accumulate on THIS word, its own track record increasingly
+  // dominates the generic prediction. That blended objective risk is then
+  // combined with the interference signal, same as before (see
   // CONFIG.difficultyBaselineWeight/difficultyInterferenceWeight). `pos` is
   // optional and only ever forwarded to the baseline (see its own comment).
   function predictWordDifficulty(word, level, history, baseline, interferenceModel, pos) {
     let objRisk = baseline ? baseline.predict(word, level, pos) : 0.15;
     if (history && history.attempts) {
-      const recencyWeighted = computeOwnRecencyWeightedErrorRate(history);
-      const ownErrorRate = clamp(recencyWeighted != null ? recencyWeighted : (history.incorrect || 0) / history.attempts, 0, 1);
-      const trust = history.attempts / (history.attempts + CONFIG.difficultyOwnDataShrinkageK);
-      objRisk = ownErrorRate * trust + objRisk * (1 - trust);
+      const mastery = computeWordMastery(history);
+      const ownRisk = clamp(1 - mastery.alpha / (mastery.alpha + mastery.beta), 0, 1);
+      const concentration = mastery.alpha + mastery.beta;
+      const trust = concentration / (concentration + CONFIG.difficultyOwnDataShrinkageK);
+      objRisk = ownRisk * trust + objRisk * (1 - trust);
     }
     if (!interferenceModel) return objRisk;
     const interferenceRisk = interferenceModel.risk(word);
@@ -1715,6 +1806,12 @@
       correct: h ? h.correct : 0,
       incorrect: h ? h.incorrect : 0,
       correctStreak: h ? h.correctStreak : 0,
+      // Posterior probability of getting this word right (see
+      // computeWordMastery/masteryMean) - the same continuous signal that
+      // now drives the "memorized" label, exposed here so the UI can show
+      // an actual confidence figure instead of implying a raw streak count
+      // is the whole story.
+      masteryMean: h ? masteryMean(h) : 0,
       avgCorrectResponseMs: h ? h.avgCorrectResponseMs : null,
       recentResponseMs: h ? h.recentResponseMs : null,
       lastWrongAnswer: h ? h.lastWrongAnswer : null,
@@ -1742,6 +1839,8 @@
     setMarked: setMarked,
     isMarked: isMarked,
     classifyState: classifyState,
+    computeWordMastery: computeWordMastery,
+    masteryMean: masteryMean,
     isDueForReview: isDueForReview,
     recentWrongAnswersOf: recentWrongAnswersOf,
     diffChars: diffChars,
@@ -1754,7 +1853,6 @@
     hasDoubledLetter: hasDoubledLetter,
     computeDifficultyBaseline: computeDifficultyBaseline,
     computeInterferenceModel: computeInterferenceModel,
-    computeOwnRecencyWeightedErrorRate: computeOwnRecencyWeightedErrorRate,
     predictWordDifficulty: predictWordDifficulty,
     buildPriorityModels: buildPriorityModels,
     computeSelectionWeight: computeSelectionWeight,
