@@ -29,42 +29,29 @@
     // buffer is, to keep storage bounded across thousands of words.
     maxRecentAttempts: 12,
 
-    // A word is Memorized the moment its current correct streak reaches
-    // this many in a row - unconditional, exactly like the original design:
-    // 2 correct answers in a row mean this word is known, regardless of
-    // whatever happened further back in its history. Any single wrong
+    // A word that has ALREADY been gotten wrong at least once needs this
+    // many correct answers in a row (counted from the recovery answer
+    // onward) before classifyState trusts it as "memorized" again - a
+    // word with a clean record skips this entirely and is memorized on its
+    // very first correct answer (see classifyState). Any single wrong
     // answer resets the streak to 0 (and the word immediately reads as
-    // "incorrect" again). See classifyState - this is only ONE of its two
-    // paths to "memorized", not the only one; masteryDecay/
-    // masteryMasteredThreshold below are the other.
+    // "incorrect" again), putting it right back under this same bar.
     memorizedStreak: 2,
 
-    // The SECOND path to "memorized" (see classifyState): a decayed
-    // Bayesian (Beta-Bernoulli) estimate of how likely you are to get a
-    // word right, tracked alongside the raw streak above, not instead of
-    // it. Every attempt updates two running pseudo-counts, masteryAlpha
-    // (weight of evidence for "correct") and masteryBeta (weight of
-    // evidence for "incorrect") - see recordAttempt - by first shrinking
-    // the PREVIOUS counts toward 0 by masteryDecay, then adding 1 to
-    // whichever count matches this attempt's result. This exists
-    // specifically for the case the raw streak alone handles badly: a word
-    // with a long, strong track record survives ONE recent slip without
-    // being thrown all the way back to needing a fresh 2-in-a-row - a wrong
-    // answer still immediately reads as "incorrect" for that answer itself
-    // (see classifyState), but the very NEXT correct answer can restore
-    // "memorized" right away (via THIS path, even though the streak itself
-    // is only 1) instead of requiring two more.
-    //
-    // This is deliberately NOT a replacement for the streak check above -
-    // an earlier version of classifyState required EVERY path to memorized
-    // to clear this estimate, including a fresh 2-in-a-row, which meant a
-    // couple of old mistakes could keep a word that was JUST answered right
-    // twice in a row stuck on "learning" (the decayed estimate hadn't
-    // caught up yet) - flooding review with words that were, by any normal
-    // definition, already known. The streak path above is unconditional
-    // precisely so "2 in a row" always means Memorized, full stop; this
-    // path only ever ADDS a second, faster way to get there for an
-    // established word recovering from a single slip.
+    // Decayed Beta-Bernoulli estimate of how likely you are to get a word
+    // right, used ONLY for predicting difficulty/risk (predictWordDifficulty,
+    // and - via that - which Memorized words auto mode reintroduces for
+    // review, see selectReintroductionCandidates) - NOT for the "memorized"
+    // label itself (see classifyState, which is purely correctness-count
+    // based, no score or confidence ramp). Every attempt updates two
+    // running pseudo-counts, masteryAlpha (evidence for "correct") and
+    // masteryBeta (evidence for "incorrect") - see recordAttempt - by first
+    // shrinking the PREVIOUS counts toward 0 by masteryDecay, then adding 1
+    // to whichever count matches this attempt's result, so old evidence
+    // fades out smoothly rather than being remembered forever or wiped in
+    // one shot - a word that used to be shaky but has been solid recently
+    // should read as LOW risk now, and the reverse for one that's recently
+    // started slipping.
     masteryDecay: 0.85,
     // Where masteryAlpha/masteryBeta start before this word has any real
     // attempts. Deliberately flat/uninformative (50/50) rather than
@@ -76,14 +63,6 @@
     // attempts start arriving, not to be a second cold-start guess.
     masteryPriorAlpha: 1,
     masteryPriorBeta: 1,
-    // The posterior mean (masteryAlpha / (masteryAlpha + masteryBeta)) must
-    // clear this bar for classifyState to call a word "memorized". Chosen so
-    // the existing invariant "two correct answers in a row from a fresh
-    // word reaches Memorized" still holds (two straight corrects from the
-    // neutral prior above land comfortably past this bar), while a single
-    // slip inside an otherwise well-established track record no longer
-    // resets the estimate all the way back to zero.
-    masteryMasteredThreshold: 0.72,
 
     // Smoothing factor for the per-word running-average correct response
     // time (avgCorrectResponseMs). Used only for review-priority ranking
@@ -168,14 +147,9 @@
     // ceiling.
     autoBalanceMinReviewShare: 0.1,
     // Within the review share, incorrect words are weighted this many times
-    // more urgently than learning words per-word (still-wrong beats
-    // almost-there) when splitting the share between the two categories.
-    // Kept high: for a learner with a large vocabulary, the "learning"
-    // bucket can easily contain hundreds of re-surfaced, already-memorized
-    // words just checking in on schedule (see backlogDueReviewBaseWeight
-    // below) - sheer numeric volume there must not be able to outweigh a
-    // much smaller but genuinely-still-wrong "incorrect" bucket just
-    // because there are more of the former.
+    // more urgently than learning words per-word (currently-wrong beats
+    // recovering-from-a-past-mistake) when splitting the share between the
+    // two categories.
     autoBalanceIncorrectWeight: 6,
 
     // ---- Backlog pressure weighting (see computeBacklogPressure) ----
@@ -193,26 +167,6 @@
     // the backlog on its own.
     backlogSeverityCap: 4,
     backlogSeverityWeightPerMiss: 0.5,
-    // A re-surfaced Memorized word due for review (see isDueForReview)
-    // starts from THIS baseline pressure, not the standard 1 every other
-    // backlog word gets - it's a periodic retention check-in on a word
-    // that's already known, not a word still being learned, so it
-    // shouldn't compete on equal footing with one. Without this, a heavy
-    // learner with thousands of words could have hundreds of due-for-review
-    // check-ins outweighing a much smaller but genuinely-struggling
-    // "incorrect"/still-learning backlog purely by numeric volume - exactly
-    // the "my quiz is flooded with easy words I already know instead of the
-    // ones I keep getting wrong" failure mode this fixes.
-    backlogDueReviewBaseWeight: 0.25,
-    // How many days overdue a re-surfaced Memorized word needs to reach its
-    // full extra weight (ADDED on top of backlogDueReviewBaseWeight above,
-    // not the standard 1), and how much extra weight a fully-overdue one
-    // adds - a word overdue by two weeks is more at risk of genuinely being
-    // forgotten than one that only just became due, even though
-    // categorizeWords treats both the same ("learning") for selection
-    // purposes.
-    backlogOverdueSaturationDays: 14,
-    backlogOverdueMaxWeight: 1.5,
 
     // ---- Predicting word difficulty - one system for new, incorrect, and
     // learning words alike (see predictWordDifficulty/rankCandidates) ----
@@ -263,36 +217,42 @@
     // just because AI signals are also available.
     difficultySemanticWeight: 0.3,
 
-    // ---- Spaced-repetition scheduling (see recordAttempt's SM-2-style
-    // interval/ease update, and isDueForReview) ----
-    // A "Memorized" word (see classifyState) used to be retired from
-    // selection FOREVER the moment its mastery estimate crossed
-    // masteryMasteredThreshold - no forgetting curve, no re-check that it
-    // actually stuck. These fields
-    // give every word its own review schedule (a simplified SM-2: a
-    // correct answer grows the interval before it's due again, scaled by
-    // an ease factor that itself grows slightly with each success and
-    // shrinks on a miss; an incorrect answer collapses the interval back to
-    // due-now) so a Memorized word quietly re-enters the "learning"
-    // selection pool once its interval elapses (see categorizeWords),
-    // instead of never being asked again just because it was once answered
-    // right twice in a row.
-    srsDefaultEase: 2.3,
-    srsMinEase: 1.3,
-    srsMaxEase: 3.2,
-    srsEaseGrowOnCorrect: 0.05,
-    srsEaseShrinkOnIncorrect: 0.2,
-    // The first two successful reviews use fixed intervals (spacing
-    // research consistently finds a short initial gap - "did it survive
-    // even one day" - is more informative than compounding ease from an
-    // interval of 0); every graduation after that multiplies the previous
-    // interval by the current ease factor, the standard SM-2 shape.
-    srsFirstIntervalDays: 1,
-    srsSecondIntervalDays: 3,
-    // Interval growth is capped so a long-mastered word still resurfaces at
-    // least this often, rather than a large ease factor pushing it out to
-    // the point it's effectively never reviewed again.
-    srsMaxIntervalDays: 120,
+    // ---- Reintroducing Memorized words (auto mode only - see
+    // selectReintroductionCandidates/selectQuestions's own
+    // opts.reintroduceMemorized) ----
+    // A "Memorized" word used to be retired from selection FOREVER, then
+    // (a later revision) re-entered rotation on a blind calendar schedule
+    // (a simplified SM-2 interval/ease system) once a fixed number of days
+    // elapsed - no matter whether that word had any actual chance of now
+    // being wrong. Both are gone: a Memorized word is never automatically
+    // rescheduled by classifyState/categorizeWords any more (it simply
+    // stays "memorized" - see categorizeWords). Instead, auto mode alone
+    // reserves this fraction of each round for Memorized words the EXISTING
+    // difficulty-prediction system (predictWordDifficulty - the same
+    // baseline/interference/own-error-rate model already used for
+    // new/incorrect/learning words) currently rates as at real risk of
+    // being gotten wrong - reusing data already being tracked (length,
+    // level, orthographic interference with current struggles, its own
+    // decayed mastery estimate) rather than a fixed calendar. 0 disables
+    // reintroduction entirely.
+    autoBalanceReintroduceShare: 0.12,
+    // A Memorized word must clear this predicted-risk bar (see
+    // predictWordDifficulty, 0..1) to be ELIGIBLE for reintroduction at
+    // all - the share above is a ceiling, not a quota to fill regardless of
+    // whether anything actually looks at-risk. With no eligible words this
+    // round, the share reserved for them simply goes unused rather than
+    // forcing in a handful of very-low-risk Memorized words just to hit a
+    // percentage.
+    autoBalanceReintroduceMinRisk: 0.35,
+    // Upper bound on how many Memorized words get their risk computed and
+    // ranked per round, applied BEFORE the share/count above - protects
+    // against the cost of scoring every single Memorized word in a large,
+    // long-used vocabulary (predictWordDifficulty is not free) when only a
+    // handful will ever be selected anyway. A weighted random pre-sample
+    // of the full Memorized pool up to this size is scored; well within
+    // "way more than any round could ever use," so it doesn't meaningfully
+    // narrow what's eligible.
+    autoBalanceReintroduceScoringCap: 300,
 
     // ---- Level balancing (auto mode - see computeLevelBalanceModel) ----
     // When a round spans more than one curriculum level, each level's fair
@@ -419,12 +379,6 @@
       // those raw counts instead of silently reporting a stale 50/50.
       masteryAlpha: null,
       masteryBeta: null,
-      // ---- Spaced-repetition scheduling (see CONFIG's own comment and
-      // recordAttempt) - dueAt 0 means "due now", same as a brand new word,
-      // which is exactly right: nothing to schedule yet. ----
-      easeFactor: CONFIG.srsDefaultEase,
-      intervalDays: 0,
-      dueAt: 0,
       avgCorrectResponseMs: null,
       recentResponseMs: null,
       lastWrongAnswer: null, // most recent incorrect answer the user typed
@@ -592,28 +546,6 @@
     history.masteryAlpha = history.masteryAlpha * CONFIG.masteryDecay + (correct ? 1 : 0);
     history.masteryBeta = history.masteryBeta * CONFIG.masteryDecay + (correct ? 0 : 1);
 
-    // ---- Spaced-repetition interval/ease update (simplified SM-2 - see
-    // CONFIG's own "Spaced-repetition scheduling" comment) - this is what
-    // lets a Memorized word re-enter selection on a schedule instead of
-    // being retired forever the moment its streak first crosses the
-    // threshold (see classifyState/categorizeWords/isDueForReview). ----
-    if (!history.easeFactor) history.easeFactor = CONFIG.srsDefaultEase;
-    if (correct) {
-      history.easeFactor = Math.min(CONFIG.srsMaxEase, history.easeFactor + CONFIG.srsEaseGrowOnCorrect);
-      if (!history.intervalDays) {
-        history.intervalDays = CONFIG.srsFirstIntervalDays;
-      } else if (history.intervalDays < CONFIG.srsSecondIntervalDays) {
-        history.intervalDays = CONFIG.srsSecondIntervalDays;
-      } else {
-        history.intervalDays = Math.min(CONFIG.srsMaxIntervalDays, Math.round(history.intervalDays * history.easeFactor));
-      }
-      history.dueAt = timestamp + history.intervalDays * ONE_DAY_MS;
-    } else {
-      history.easeFactor = Math.max(CONFIG.srsMinEase, history.easeFactor - CONFIG.srsEaseShrinkOnIncorrect);
-      history.intervalDays = 0;
-      history.dueAt = timestamp; // due again immediately - already selectable as "incorrect" anyway
-    }
-
     if (correct && responseMs != null) {
       history.avgCorrectResponseMs =
         history.avgCorrectResponseMs == null
@@ -770,51 +702,30 @@
     return m.alpha / (m.alpha + m.beta);
   }
 
-  // Four states: "new" (never attempted - not one of the three tracked
-  // states, just bookkeeping for the pool that hasn't been touched yet),
-  // "incorrect" (most recent answer was wrong), "learning", "memorized".
-  // Reaching "memorized" has TWO independent paths, deliberately an OR, not
-  // a single gated check:
-  //   1. correctStreak >= memorizedStreak - unconditional, exactly like the
-  //      original design: 2 (or more) correct answers in a row mean this
-  //      word is known, full stop, regardless of anything further back in
-  //      its history. This is NOT gated behind the mastery estimate below -
-  //      a word with a couple of old mistakes still reaches Memorized the
-  //      moment its current streak clears the bar, same as a brand new
-  //      word. (An earlier version of this function required the DECAYED
-  //      mastery estimate to also clear its own threshold even when the
-  //      streak alone was already >= 2 - which meant a handful of old
-  //      misses could keep a genuinely-just-answered-right-twice word stuck
-  //      on "learning", flooding review with words that were, by any normal
-  //      definition, already known. That's what this path fixes.)
-  //   2. masteryMean(h) >= masteryMasteredThreshold - the decayed Bayesian
-  //      estimate (see CONFIG's own "masteryDecay" comment), which is what
-  //      lets a word with a LONG, strong track record recover "memorized"
-  //      on the very next correct answer after a single isolated slip
-  //      (streak only 1 at that point, but the estimate is still high)
-  //      instead of needing a fresh 2-in-a-row like a brand new word would.
-  // Any single wrong answer still immediately drops a word from "memorized"
-  // straight back to "incorrect" for that answer, whichever path got it
-  // there - the mastery estimate itself only takes a proportional hit (it
-  // doesn't reset to zero), which is exactly what makes path 2 possible.
+  // Four states: "new" (never attempted), "incorrect" (most recent answer
+  // was wrong), "learning" (recovering from a PAST mistake, not yet
+  // re-confirmed), "memorized". Deliberately simple, matching what a word's
+  // own history actually earns it:
+  //   - a word that has NEVER been gotten wrong (h.incorrect === 0) reaches
+  //     "memorized" the moment it's answered correctly at all - one correct
+  //     answer is enough proof for a word with a clean record; there is no
+  //     "prove it wasn't a fluke" step to earn here, because there's never
+  //     been a mistake to be cautious about.
+  //   - a word that HAS been gotten wrong at least once needs
+  //     memorizedStreak (2) correct answers in a row, counted from the
+  //     recovery answer onward, before it's trusted as "memorized" again -
+  //     the fluke-guard this app has always had, now applied ONLY where a
+  //     mistake actually happened, not to every word regardless of its
+  //     track record.
+  // Any single wrong answer still immediately reads as "incorrect" for that
+  // answer - correctStreak resets to 0, and this word now belongs to the
+  // second case above for as long as it has ANY recorded mistake.
   function classifyState(history) {
     const h = history || {};
     if (!h.attempts) return "new";
     if (h.lastResult === "incorrect") return "incorrect";
-    if ((h.correctStreak || 0) >= CONFIG.memorizedStreak) return "memorized";
-    return masteryMean(h) >= CONFIG.masteryMasteredThreshold ? "memorized" : "learning";
-  }
-
-  // Whether a word currently classified "memorized" (see classifyState
-  // above) has reached its scheduled review point (see recordAttempt's
-  // SM-2-style interval/ease update) and should re-enter the selectable
-  // pool instead of staying retired - see categorizeWords, the only caller.
-  // A word that has never been through the scheduler (dueAt still 0/unset -
-  // e.g. progress data synced from before this existed) is treated as
-  // already due rather than silently exempt from review forever.
-  function isDueForReview(history, now) {
-    const h = history || {};
-    return (h.dueAt || 0) <= (typeof now === "number" ? now : Date.now());
+    if (!h.incorrect) return "memorized";
+    return (h.correctStreak || 0) >= CONFIG.memorizedStreak ? "memorized" : "learning";
   }
 
   // Most recent distinct wrong answers for a word, newest first - lets the
@@ -1484,7 +1395,12 @@
     return {
       weightOf: (level, category) => {
         if (level == null) return 1;
-        const table = category === "incorrect" || category === "learning" ? reviewWeight : exposureWeight;
+        // "reintroduce" (see selectReintroductionCandidates) is review-type
+        // content (a Memorized word being brought back), not first exposure,
+        // so it shares incorrect/learning's table - a level with heavier
+        // overall backlog pressure gets a slightly bigger share of
+        // reintroduction slots too, same reasoning as the other two.
+        const table = category === "incorrect" || category === "learning" || category === "reintroduce" ? reviewWeight : exposureWeight;
         return table[level] != null ? table[level] : 1;
       },
     };
@@ -1492,12 +1408,15 @@
 
   /* ---------- Word categorization ---------- */
 
-  // `now` (optional, defaults to Date.now()) only affects the
-  // memorized/due-for-review split below - passed through by selectQuestions
-  // (which already has its own `now`) and available to any other caller
-  // that wants a specific moment (e.g. tests).
+  // A word's bucket here is exactly its classifyState label - unlike an
+  // earlier version, a Memorized word is never automatically rerouted back
+  // into "learning" by this function on any kind of schedule. Auto mode's
+  // OWN mechanism for bringing Memorized words back for review is
+  // selectReintroductionCandidates (prediction-based, not this function) -
+  // see selectQuestions's own opts.reintroduceMemorized. `now` is currently
+  // unused (kept so existing callers that pass it - and any that want a
+  // specific moment for future use, e.g. tests - don't need updating).
   function categorizeWords(pool, historyStore, now) {
-    const at = typeof now === "number" ? now : Date.now();
     const unseen = [];
     const incorrect = [];
     const learning = [];
@@ -1507,19 +1426,8 @@
       const state = classifyState(h);
       if (state === "new") unseen.push(w);
       else if (state === "incorrect") incorrect.push(w);
-      else if (state === "memorized") {
-        // A Memorized word whose spaced-repetition interval has elapsed
-        // (see recordAttempt's SM-2-style scheduling / isDueForReview)
-        // quietly re-enters the "learning" bucket instead of staying
-        // retired forever - real retention needs a periodic check-in, not
-        // a one-time streak. classifyState and the word's displayed
-        // "Memorized" label/count (see computeProgressSummary, which uses
-        // classifyState directly, not this function) are unaffected either
-        // way - this only changes what's eligible for SELECTION and what
-        // shows up in 複習's 學習中 list (see app.js's wordsInCategory).
-        if (isDueForReview(h, at)) learning.push(w);
-        else memorized.push(w);
-      } else learning.push(w);
+      else if (state === "memorized") memorized.push(w);
+      else learning.push(w);
     }
     return { unseen: unseen, incorrect: incorrect, learning: learning, memorized: memorized };
   }
@@ -1732,44 +1640,20 @@
 
   // Sums a bucket's contribution to review PRESSURE - not a flat headcount
   // (see CONFIG's own "Backlog pressure weighting" comment). Every backlog
-  // word starts at a baseline weight of 1 - identical to the old raw-count
-  // behavior - then gets bumped up by whichever of two signals applies:
-  //
-  //   - an INCORRECT word gets extra weight the more consecutive times
-  //     it's been missed (history.incorrectStreak) - an entrenched miss
-  //     needs more attention than a one-off slip, even though
-  //     categorizeWords buckets both identically as "incorrect".
-  //   - a re-surfaced Memorized word due for review (see isDueForReview) -
-  //     recognizable here as a "learning"-bucket word whose own
-  //     classifyState is still "memorized" - gets extra weight the
-  //     further PAST its due date it is. A word overdue by two weeks is
-  //     more at risk of really being forgotten than one that only just
-  //     became due, even though categorizeWords buckets both identically
-  //     as "learning".
-  //
-  // A brand new "learning" word (streak 1, never yet Memorized) matches
-  // neither signal, so it contributes exactly the baseline 1 - the whole
-  // point is that severity ADDS pressure on top of existing, it never
-  // takes any away.
+  // word starts at a baseline weight of 1, then gets bumped up the more
+  // consecutive times it's been missed (history.incorrectStreak) - an
+  // entrenched miss needs more attention than a one-off slip, even though
+  // categorizeWords buckets both identically as "incorrect". A word with no
+  // current miss streak (including any "learning" word, which by
+  // definition is currently answered correctly - see classifyState)
+  // contributes exactly the baseline 1.
   function computeBacklogPressure(words, historyStore, now) {
-    const at = typeof now === "number" ? now : Date.now();
     let total = 0;
     for (const w of words) {
       const h = historyFor(historyStore, w.word);
-      const dueForReview = h && h.dueAt && classifyState(h) === "memorized";
-      // A due-for-review word is a periodic check-in on something already
-      // known, not a word still being learned - see CONFIG's own
-      // "backlogDueReviewBaseWeight" comment for why it starts lower than
-      // every other backlog word's standard baseline of 1.
-      let weight = dueForReview ? CONFIG.backlogDueReviewBaseWeight : 1;
-      if (h) {
-        if ((h.incorrectStreak || 0) > 1) {
-          weight += Math.min(CONFIG.backlogSeverityCap, h.incorrectStreak - 1) * CONFIG.backlogSeverityWeightPerMiss;
-        }
-        if (dueForReview) {
-          const overdueDays = Math.max(0, (at - h.dueAt) / ONE_DAY_MS);
-          weight += Math.min(1, overdueDays / CONFIG.backlogOverdueSaturationDays) * CONFIG.backlogOverdueMaxWeight;
-        }
+      let weight = 1;
+      if (h && (h.incorrectStreak || 0) > 1) {
+        weight += Math.min(CONFIG.backlogSeverityCap, h.incorrectStreak - 1) * CONFIG.backlogSeverityWeightPerMiss;
       }
       total += weight;
     }
@@ -1798,6 +1682,37 @@
 
   /* ---------- Question selection: ratio-driven, one mode ---------- */
 
+  // Which Memorized words auto mode should bring back for review this
+  // round (see CONFIG's own "Reintroducing Memorized words" comment) -
+  // reuses the exact same difficulty-prediction model already built for
+  // new/incorrect/learning words (`models`, from buildPriorityModels), so a
+  // Memorized word that now looks similar to a currently-struggling word,
+  // or whose own decayed track record has started slipping, surfaces
+  // first. `random` pre-samples down to CONFIG.autoBalanceReintroduceScoringCap
+  // BEFORE scoring when the Memorized pool is larger than that, so a large,
+  // long-used vocabulary doesn't pay to run predictWordDifficulty over
+  // every single Memorized word every round just to pick a handful.
+  // Returns the eligible subset (predicted risk >= autoBalanceReintroduceMinRisk),
+  // sorted highest-risk first - selectQuestions still runs this through the
+  // normal rankCandidates path (category "reintroduce") for the final
+  // count/level-balance/response-time-adjusted selection, same as every
+  // other category.
+  function selectReintroductionCandidates(memorizedWords, historyStore, models, random) {
+    if (!memorizedWords.length) return [];
+    const sampled =
+      memorizedWords.length > CONFIG.autoBalanceReintroduceScoringCap
+        ? shuffle(memorizedWords, random).slice(0, CONFIG.autoBalanceReintroduceScoringCap)
+        : memorizedWords;
+    const scored = sampled.map((w) => ({
+      w: w,
+      risk: predictWordDifficulty(w.word, w.level, historyFor(historyStore, w.word), models.difficultyBaseline, models.interferenceModel, w.pos),
+    }));
+    return scored
+      .filter((s) => s.risk >= CONFIG.autoBalanceReintroduceMinRisk)
+      .sort((a, b) => b.risk - a.risk)
+      .map((s) => s.w);
+  }
+
   // Target counts for each of the three selectable categories, scaled from
   // `ratio` (need not sum to exactly 1 - normalized here) proportionally to
   // `size`. The LAST category (learning) absorbs whatever rounding leaves
@@ -1823,10 +1738,14 @@
   // now just two points on the same ratio the user can set anywhere via the
   // home screen's sliders (0% on a category simply excludes it, including
   // from the fallback redistribution below - a slider set to 0 means never
-  // show that category, not "only as a last resort"). Redistributes a
-  // shortfall in one category into the other non-zero categories (in ratio
-  // order) rather than ever duplicating a word; memorized words are always
-  // excluded - they've graduated.
+  // show that category, not "only as a last resort"). Memorized words are
+  // otherwise excluded - they've graduated - UNLESS `opts.reintroduceMemorized`
+  // is set (auto mode only - see app.js), in which case a small share of
+  // the round (CONFIG.autoBalanceReintroduceShare) is CARVED OUT of the
+  // new/incorrect/learning split above for Memorized words the prediction
+  // model rates as currently at risk (see selectReintroductionCandidates) -
+  // the round's total `size` is unchanged either way, this only decides
+  // what fills it.
   function selectQuestions(opts) {
     const o = opts || {};
     const pool = o.pool || [];
@@ -1839,7 +1758,7 @@
     size = Math.min(size, totalAvailable);
     if (size <= 0) return [];
 
-    const { unseen, incorrect, learning } = categorizeWords(pool, historyStore, now);
+    const { unseen, incorrect, learning, memorized } = categorizeWords(pool, historyStore, now);
     const models = buildPriorityModels(historyStore, o.aiSignals);
     // Level balancing (see computeLevelBalanceModel/CONFIG's own comment)
     // only makes sense to apply when the caller opts in (auto mode - see
@@ -1848,17 +1767,30 @@
     // deliberate manual choice that shouldn't be second-guessed by an
     // automatic per-level boost/dampen underneath it.
     if (o.levelBalance) models.levelBalance = computeLevelBalanceModel(pool, historyStore, now);
-    const targets = computeQuestionTargets(size, ratio);
+
+    let reintroduceRanked = [];
+    let reintroduceTarget = 0;
+    if (o.reintroduceMemorized && memorized.length && CONFIG.autoBalanceReintroduceShare > 0) {
+      const desired = Math.min(size, Math.round(size * CONFIG.autoBalanceReintroduceShare));
+      const eligible = selectReintroductionCandidates(memorized, historyStore, models, random);
+      if (eligible.length) {
+        reintroduceRanked = rankCandidates(eligible, historyStore, random, now, models, "reintroduce");
+        reintroduceTarget = Math.min(desired, reintroduceRanked.length);
+      }
+    }
+
+    const targets = computeQuestionTargets(size - reintroduceTarget, ratio);
     const categoryWords = { new: unseen, incorrect: incorrect, learning: learning };
 
     const order = ["new", "incorrect", "learning"].filter((key) => (ratio[key] || 0) > 0);
+    if (reintroduceTarget) order.push("reintroduce");
     if (!order.length) return [];
 
-    const buckets = order.map((key) => ({
-      key: key,
-      ranked: rankCandidates(categoryWords[key], historyStore, random, now, models, key),
-      target: targets[key],
-    }));
+    const buckets = order.map((key) =>
+      key === "reintroduce"
+        ? { key: key, ranked: reintroduceRanked, target: reintroduceTarget }
+        : { key: key, ranked: rankCandidates(categoryWords[key], historyStore, random, now, models, key), target: targets[key] }
+    );
 
     const deduped = fillBucketsWithFallback(buckets, size, order);
     return shuffle(deduped, random);
@@ -1970,7 +1902,6 @@
     recalibrateWordMastery: recalibrateWordMastery,
     applyMastery: applyMastery,
     masteryMean: masteryMean,
-    isDueForReview: isDueForReview,
     recentWrongAnswersOf: recentWrongAnswersOf,
     diffChars: diffChars,
     diffCharsBoth: diffCharsBoth,
@@ -1990,6 +1921,7 @@
     filterMarked: filterMarked,
     selectReviewBatch: selectReviewBatch,
     computeQuestionTargets: computeQuestionTargets,
+    selectReintroductionCandidates: selectReintroductionCandidates,
     computeAutoBalanceRatio: computeAutoBalanceRatio,
     computeBacklogPressure: computeBacklogPressure,
     computeAutoBalanceRatioForPool: computeAutoBalanceRatioForPool,

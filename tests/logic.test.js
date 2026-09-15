@@ -109,16 +109,20 @@ test("a wrong answer is state 'incorrect'", () => {
   assert.equal(L.classifyState(h), "incorrect");
 });
 
-test("one correct answer (streak 1) is 'learning', not yet 'memorized'", () => {
+test("one correct answer on a word with a clean record (never gotten wrong) is immediately 'memorized' - no fluke-guard needed when there's never been a mistake", () => {
   const h = L.createEmptyWordHistory("go", 4, 2);
   L.recordAttempt(h, { correct: true, responseMs: 400, timestamp: 1000 });
-  assert.equal(L.classifyState(h), "learning");
+  assert.equal(L.classifyState(h), "memorized");
 });
 
-test("two consecutive correct answers reach 'memorized'", () => {
+test("a word that HAS been gotten wrong needs memorizedStreak (2) correct answers in a row to be trusted as 'memorized' again - just the recovery answer alone (streak 1) is 'learning'", () => {
   const h = L.createEmptyWordHistory("bat", 4, 3);
-  play(h, [{ correct: true }, { correct: true }]);
-  assert.equal(L.classifyState(h), "memorized");
+  play(h, [{ correct: false }]);
+  assert.equal(L.classifyState(h), "incorrect");
+  play(h, [{ correct: true }]);
+  assert.equal(L.classifyState(h), "learning", "one correct after a mistake is recovering, not yet re-confirmed");
+  play(h, [{ correct: true }]);
+  assert.equal(L.classifyState(h), "memorized", "two in a row since the mistake is enough to trust it again");
 });
 
 test("a broken streak resets: memorized -> wrong answer -> back to 'incorrect', not just knocked down a notch", () => {
@@ -149,74 +153,50 @@ test("a long, slowly-typed word and a short, quickly-typed word both reach Memor
   assert.equal(L.classifyState(longWord), "memorized");
 });
 
-/* ================= Spaced-repetition scheduling (recordAttempt's SM-2-style
-   ease/interval/dueAt, isDueForReview, and categorizeWords re-surfacing a
-   due Memorized word) ================= */
+/* ================= Reintroducing Memorized words (prediction-based, not a
+   calendar - see selectReintroductionCandidates) ================= */
 
-test("recordAttempt schedules increasing intervals on consecutive correct answers, and ease grows with them", () => {
-  const h = L.createEmptyWordHistory("schedule", 4, 8);
-  const startEase = h.easeFactor;
-
-  L.recordAttempt(h, { correct: true, timestamp: 1000, level: 4, length: 8 });
-  assert.equal(h.intervalDays, 1, "first success uses the fixed first interval");
-  assert.equal(h.dueAt, 1000 + 1 * 24 * 60 * 60 * 1000);
-  assert.ok(h.easeFactor > startEase, "ease should grow slightly on a correct answer");
-
-  L.recordAttempt(h, { correct: true, timestamp: 2000, level: 4, length: 8 });
-  assert.equal(h.intervalDays, 3, "second success jumps to the fixed second interval");
-
-  const easeAfterTwo = h.easeFactor;
-  L.recordAttempt(h, { correct: true, timestamp: 3000, level: 4, length: 8 });
-  assert.equal(h.intervalDays, Math.round(3 * easeAfterTwo), "third+ success multiplies the previous interval by ease (SM-2 shape)");
-});
-
-test("recordAttempt collapses the interval back to due-now and shrinks ease on an incorrect answer", () => {
-  const h = L.createEmptyWordHistory("collapse", 4, 8);
-  play(h, [{ correct: true }, { correct: true }, { correct: true }]); // build up a real interval first
-  assert.ok(h.intervalDays > 1);
-  const easeBeforeMiss = h.easeFactor;
-
-  L.recordAttempt(h, { correct: false, timestamp: 9000, level: 4, length: 8 });
-  assert.equal(h.intervalDays, 0);
-  assert.equal(h.dueAt, 9000, "due again immediately after a miss");
-  assert.ok(h.easeFactor < easeBeforeMiss, "ease should shrink on an incorrect answer");
-});
-
-test("recordAttempt's ease factor is clamped within [srsMinEase, srsMaxEase] across many attempts", () => {
-  const easy = L.createEmptyWordHistory("easy", 4, 4);
-  for (let i = 0; i < 50; i++) L.recordAttempt(easy, { correct: true, timestamp: 1000 + i * 1000, level: 4, length: 4 });
-  assert.ok(easy.easeFactor <= L.CONFIG.srsMaxEase);
-
-  const hard = L.createEmptyWordHistory("hard", 4, 4);
-  for (let i = 0; i < 50; i++) L.recordAttempt(hard, { correct: false, timestamp: 1000 + i * 1000, level: 4, length: 4 });
-  assert.ok(hard.easeFactor >= L.CONFIG.srsMinEase);
-});
-
-test("isDueForReview is true once now reaches dueAt, and true by default for a word never scheduled (dueAt still 0)", () => {
-  const h = L.createEmptyWordHistory("brand-new", 4, 9);
-  assert.equal(L.isDueForReview(h, 12345), true, "an unscheduled word (dueAt 0) is treated as already due");
-
-  L.recordAttempt(h, { correct: true, timestamp: 1000, level: 4, length: 9 });
-  assert.equal(L.isDueForReview(h, h.dueAt - 1), false);
-  assert.equal(L.isDueForReview(h, h.dueAt), true);
-  assert.equal(L.isDueForReview(h, h.dueAt + 1), true);
-});
-
-test("categorizeWords keeps a not-yet-due Memorized word out of 'learning' but moves a due one in, without changing its classifyState label", () => {
+test("categorizeWords never auto-reclassifies a Memorized word - it stays 'memorized' regardless of how long ago it was last tested", () => {
   const historyStore = {};
   const h = L.createEmptyWordHistory("steady", 4, 6);
-  play(h, [{ correct: true }, { correct: true }]); // memorized at t=3000, due at 3000 + 3 days
+  play(h, [{ correct: true }]); // memorized immediately - clean record
   historyStore.steady = h;
   const pool = [makeWord("steady", 4)];
 
-  const notYetDue = L.categorizeWords(pool, historyStore, 3000 + 1 * 24 * 60 * 60 * 1000);
-  assert.equal(notYetDue.memorized.length, 1);
-  assert.equal(notYetDue.learning.length, 0);
+  const soon = L.categorizeWords(pool, historyStore, 2000);
+  const muchLater = L.categorizeWords(pool, historyStore, 2000 + 365 * 24 * 60 * 60 * 1000);
+  assert.equal(soon.memorized.length, 1);
+  assert.equal(soon.learning.length, 0);
+  assert.equal(muchLater.memorized.length, 1, "no calendar-based reroute - a Memorized word stays put no matter how much time passes");
+  assert.equal(muchLater.learning.length, 0);
+});
 
-  const due = L.categorizeWords(pool, historyStore, 3000 + 4 * 24 * 60 * 60 * 1000);
-  assert.equal(due.memorized.length, 0);
-  assert.equal(due.learning.length, 1, "a due Memorized word should surface in the learning bucket for selection");
-  assert.equal(L.classifyState(h), "memorized", "the word's own displayed state is untouched either way - only selection eligibility changes");
+test("selectReintroductionCandidates returns nothing when the Memorized pool is empty, or when nothing clears the minimum risk bar", () => {
+  const models = L.buildPriorityModels({});
+  assert.deepEqual(L.selectReintroductionCandidates([], {}, models, Math.random), []);
+
+  // A pool of Memorized words that predictWordDifficulty has no reason to
+  // flag as risky (no baseline data, no interference, no own error history)
+  // - the neutral 0.15 cold-start guess is well under any sane minRisk.
+  const historyStore = {};
+  const pool = makePool(10, 4, "safe");
+  for (const w of pool) {
+    const h = L.createEmptyWordHistory(w.word, w.level, w.word.length);
+    play(h, [{ correct: true }]);
+    historyStore[w.word.toLowerCase()] = h;
+  }
+  const candidates = L.selectReintroductionCandidates(pool, historyStore, models, Math.random);
+  assert.deepEqual(candidates, [], "nothing should qualify when nothing looks at-risk");
+});
+
+test("selectReintroductionCandidates ranks eligible Memorized words by predicted risk, highest first, and excludes ones below the minimum", () => {
+  const models = { difficultyBaseline: { predict: (word) => (word === "risky" ? 0.9 : word === "borderline" ? 0.5 : 0.05) }, interferenceModel: null, responseTimeBaseline: null };
+  const pool = [makeWord("risky", 4), makeWord("borderline", 4), makeWord("safe", 4)];
+  const historyStore = {};
+  for (const w of pool) historyStore[w.word.toLowerCase()] = L.createEmptyWordHistory(w.word, 4, w.word.length);
+
+  const candidates = L.selectReintroductionCandidates(pool, historyStore, models, Math.random);
+  assert.deepEqual(candidates.map((w) => w.word), ["risky", "borderline"], "only words at/above autoBalanceReintroduceMinRisk qualify, highest risk first");
 });
 
 /* ================= Wrong-answer review data ================= */
@@ -469,7 +449,10 @@ test("selectQuestions with levelBalance:true noticeably shifts the level mix tow
   const pool = heavyLevel.concat(lightLevel);
   const historyStore = {};
   const learningHistory = (attempts) => ({
-    attempts: attempts, correct: attempts, incorrect: 0, correctStreak: 0,
+    // "learning" (see classifyState) needs a past mistake and a streak
+    // under memorizedStreak - held constant here regardless of `attempts`
+    // (this test varies EXPOSURE count only, not state).
+    attempts: attempts, correct: Math.max(0, attempts - 1), incorrect: 1, correctStreak: 1,
     lastResult: "correct", lastSeen: 0, lastReviewedAt: 0, markedAt: 0,
   });
   for (const w of heavyLevel) historyStore[w.word.toLowerCase()] = learningHistory(30);
@@ -588,6 +571,9 @@ test("selectQuestions no longer systematically favors long words for review just
     const word = "w".repeat(len);
     words.push({ word: word, pos: "n.", level: 4, zh: "測試" });
     const h = L.createEmptyWordHistory(word, 4, len);
+    // "learning" (see classifyState) needs a past mistake - give each word
+    // one, then the on-pace correct answer the test is actually about.
+    L.recordAttempt(h, { correct: false, timestamp: now - 1000, level: 4, length: len });
     L.recordAttempt(h, { correct: true, responseMs: 500 + len * 150, timestamp: now, level: 4, length: len });
     historyStore[word.toLowerCase()] = h;
   }
@@ -661,8 +647,8 @@ test("selectQuestions with levelBalance never lets one level fully crowd out ano
   // base model) except level A gets far more total attempts than B/C -
   // exactly the kind of skew that drove the level-balance weight far from
   // 1 for one level while everything else stayed near-tied.
-  for (const w of levelA) historyStore[w.word.toLowerCase()] = { attempts: 20, correct: 20, incorrect: 0, correctStreak: 0, lastResult: "correct", lastSeen: 0, lastReviewedAt: 0, markedAt: 0 };
-  for (const w of levelB.concat(levelC)) historyStore[w.word.toLowerCase()] = { attempts: 1, correct: 1, incorrect: 0, correctStreak: 0, lastResult: "correct", lastSeen: 0, lastReviewedAt: 0, markedAt: 0 };
+  for (const w of levelA) historyStore[w.word.toLowerCase()] = { attempts: 20, correct: 19, incorrect: 1, correctStreak: 1, lastResult: "correct", lastSeen: 0, lastReviewedAt: 0, markedAt: 0 };
+  for (const w of levelB.concat(levelC)) historyStore[w.word.toLowerCase()] = { attempts: 1, correct: 0, incorrect: 1, correctStreak: 1, lastResult: "correct", lastSeen: 0, lastReviewedAt: 0, markedAt: 0 };
 
   const selection = L.selectQuestions({
     pool,
@@ -728,6 +714,9 @@ test("selectQuestions hits the default 80/10/10 mix when all categories have amp
   }
   for (const w of learningWords) {
     const h = L.createEmptyWordHistory(w.word, w.level, w.word.length);
+    // "learning" (under the new rule - see classifyState) means recovering
+    // from a PAST mistake: one wrong, then one right, streak still only 1.
+    L.recordAttempt(h, { correct: false, responseMs: 1200, timestamp: 900, level: w.level, length: w.word.length });
     L.recordAttempt(h, { correct: true, responseMs: 1200, timestamp: 1000, level: w.level, length: w.word.length });
     historyStore[w.word.toLowerCase()] = h;
   }
@@ -754,6 +743,7 @@ test("selectQuestions honors a custom ratio - e.g. the old Review Test's 70/30 i
   }
   for (const w of learningWords) {
     const h = L.createEmptyWordHistory(w.word, w.level, w.word.length);
+    L.recordAttempt(h, { correct: false, responseMs: 1000, timestamp: 900, level: w.level, length: w.word.length });
     L.recordAttempt(h, { correct: true, responseMs: 1000, timestamp: 1000, level: w.level, length: w.word.length });
     historyStore[w.word.toLowerCase()] = h;
   }
@@ -851,18 +841,37 @@ test("selectQuestions excludes a Memorized word that hasn't reached its spaced-r
   assert.equal(selection.length, 0, "the only word in the pool is Memorized and not yet due, so there is nothing left to select");
 });
 
-test("selectQuestions re-includes a Memorized word once its spaced-repetition interval has elapsed (due for review) - a real forgetting curve, not permanent graduation", () => {
+test("selectQuestions never includes a Memorized word by default - opts.reintroduceMemorized is required", () => {
   const historyStore = {};
-  const memorizedWord = makeWord("done", 4);
   const h = L.createEmptyWordHistory("done", 4, 4);
-  play(h, [{ correct: true }, { correct: true }]); // last attempt at t=3000, schedules a 3-day interval - see recordAttempt
+  play(h, [{ correct: true }]);
   historyStore.done = h;
 
-  const pool = [memorizedWord];
-  const fourDaysLater = 3000 + 4 * 24 * 60 * 60 * 1000; // past the 3-day interval
-  const selection = L.selectQuestions({ pool, historyStore, size: 80, random: seededRandom(5), now: fourDaysLater });
-  assert.equal(selection.length, 1, "a Memorized word past its due date should re-enter the selectable pool");
-  assert.equal(selection[0].word, "done");
+  const selection = L.selectQuestions({ pool: [makeWord("done", 4)], historyStore, size: 80, random: seededRandom(5) });
+  assert.deepEqual(selection, [], "a Memorized word must not resurface without opting into reintroduction");
+});
+
+test("selectQuestions with opts.reintroduceMemorized carves a Memorized word the prediction model rates at-risk into the round, alongside new words", () => {
+  const historyStore = {};
+  const riskyMemorized = makeWord("risky", 4);
+  const h = L.createEmptyWordHistory("risky", 4, 5);
+  play(h, [{ correct: true }]);
+  historyStore.risky = h;
+
+  const newWords = makePool(20, 4, "fresh");
+  const pool = [riskyMemorized].concat(newWords);
+  // A baseline that flags "risky" as high risk so it clears autoBalanceReintroduceMinRisk.
+  const aiSignals = { risky: { priorDifficulty: 0.9 } };
+  const selection = L.selectQuestions({
+    pool: pool,
+    historyStore: historyStore,
+    size: 10,
+    ratio: { new: 1, incorrect: 0, learning: 0 },
+    aiSignals: aiSignals,
+    reintroduceMemorized: true,
+    random: seededRandom(3),
+  });
+  assert.ok(selection.some((w) => w.word === "risky"), "the at-risk Memorized word should be reintroduced even though the ratio itself is 100% new");
 });
 
 test("selectQuestions returns an empty list (not an error) when every ratio slider is 0%", () => {
@@ -948,6 +957,7 @@ test("computeAutoBalanceRatioForPool derives counts from a pool + historyStore, 
   }
   for (const w of learningWords) {
     const h = L.createEmptyWordHistory(w.word, w.level, w.word.length);
+    L.recordAttempt(h, { correct: false, responseMs: 900, timestamp: 900, level: w.level, length: w.word.length });
     L.recordAttempt(h, { correct: true, responseMs: 900, timestamp: 1000, level: w.level, length: w.word.length });
     historyStore[w.word.toLowerCase()] = h;
   }
@@ -991,42 +1001,15 @@ test("computeBacklogPressure weighs a word missed several times in a row higher 
   assert.ok(Math.abs(entrenchedPressure - expectedCapped) < 1e-9, "severity weight should be capped, not grow unbounded with the streak");
 });
 
-test("computeBacklogPressure weighs a re-surfaced Memorized word higher the further past its due date it is, but a freshly-due one starts at the LOWERED due-review baseline, not the standard 1", () => {
+test("computeBacklogPressure gives a plain 'learning' word (currently correct, no miss streak) the same baseline weight as a word missed just once", () => {
   const historyStore = {};
-  const word = makeWord("overdue", 4);
-  const h = L.createEmptyWordHistory("overdue", 4, 7);
-  play(h, [{ correct: true }, { correct: true }]); // memorized at t=3000, due at 3000 + 3 days
-  historyStore.overdue = h;
+  const learningWord = makeWord("recovering", 4);
+  const learningHistory = L.createEmptyWordHistory("recovering", 4, 10);
+  play(learningHistory, [{ correct: false }, { correct: true }]); // "learning" - recovering from a mistake
+  historyStore.recovering = learningHistory;
 
-  const justDue = 3000 + 3 * 24 * 60 * 60 * 1000;
-  const wayOverdue = 3000 + (3 + 30) * 24 * 60 * 60 * 1000; // a month past due
-  const justDuePressure = L.computeBacklogPressure([word], historyStore, justDue);
-  const wayOverduePressure = L.computeBacklogPressure([word], historyStore, wayOverdue);
-  assert.ok(
-    Math.abs(justDuePressure - L.CONFIG.backlogDueReviewBaseWeight) < 1e-9,
-    "a word just barely due yet should read as the lowered due-review baseline, not the standard 1 every other backlog word gets"
-  );
-  assert.ok(wayOverduePressure > justDuePressure, "a month-overdue Memorized word should weigh more than one that just became due");
-  const expectedCapped = L.CONFIG.backlogDueReviewBaseWeight + L.CONFIG.backlogOverdueMaxWeight;
-  assert.ok(Math.abs(wayOverduePressure - expectedCapped) < 1e-9, "overdue weight should be capped, not grow unbounded forever");
-});
-
-test("computeBacklogPressure: a due-for-review Memorized word contributes far less pressure than a genuinely-incorrect or still-learning word - a big due-for-review backlog must not be able to outweigh real struggle just by numeric volume", () => {
-  const historyStore = {};
-  const dueWord = makeWord("known", 4);
-  const dueHistory = L.createEmptyWordHistory("known", 4, 5);
-  play(dueHistory, [{ correct: true }, { correct: true }]); // memorized, due at +3 days
-  historyStore.known = dueHistory;
-
-  const strugglingWord = makeWord("hard", 4);
-  const strugglingHistory = L.createEmptyWordHistory("hard", 4, 4);
-  L.recordAttempt(strugglingHistory, { correct: false, timestamp: 1000, level: 4, length: 4 });
-  historyStore.hard = strugglingHistory;
-
-  const now = 3000 + 3 * 24 * 60 * 60 * 1000; // dueWord is exactly due now
-  const duePressure = L.computeBacklogPressure([dueWord], historyStore, now);
-  const strugglingPressure = L.computeBacklogPressure([strugglingWord], historyStore, now);
-  assert.ok(duePressure < strugglingPressure, `a freshly-due already-known word (${duePressure}) must weigh less than a word actually gotten wrong (${strugglingPressure})`);
+  assert.equal(L.classifyState(learningHistory), "learning");
+  assert.equal(L.computeBacklogPressure([learningWord], historyStore, 20000), 1);
 });
 
 test("computeAutoBalanceRatioForPool gives a more severe backlog a higher review share than an equally-SIZED but mild one - the fix for 'balancing only looks at headcount'", () => {
@@ -1455,7 +1438,7 @@ test("computeWordMastery replays a recentAttempts ring buffer through the same d
   assert.ok(slippingMean < 0.5, `recently-slipping word should read as LOWER mastery than a flat 50% lifetime rate (got ${slippingMean})`);
 });
 
-test("computeWordMastery credits lifetime evidence OUTSIDE the ring buffer before replaying it, so a word attempted many more times than maxRecentAttempts holds doesn't get its whole established record wiped by one old miss still sitting in that window (regression: this used to demote long-memorized words back to 'learning' on migration)", () => {
+test("computeWordMastery/masteryMean (used for risk PREDICTION, not the memorized label) credits lifetime evidence OUTSIDE the ring buffer before replaying it, so a word attempted many more times than maxRecentAttempts holds doesn't have its whole established record wiped by one old miss still sitting in that window", () => {
   // 15 lifetime attempts, 14 correct: 3 corrects aged out of the 12-slot
   // ring buffer, then 1 wrong, then 11 more corrects - so the ring buffer
   // (last 12) holds exactly 1 wrong + 11 correct, but the word's REAL
@@ -1464,55 +1447,47 @@ test("computeWordMastery credits lifetime evidence OUTSIDE the ring buffer befor
   const recentAttempts = [{ correct: false }];
   for (let i = 0; i < 11; i++) recentAttempts.push({ correct: true });
   const staleImport = { attempts: 15, correct: 14, incorrect: 1, recentAttempts: recentAttempts, lastResult: "correct" };
-  assert.equal(L.classifyState(staleImport), "memorized", "a genuinely well-known word must not be demoted just because migration only has a capped ring buffer to replay");
 
   // Sanity check the fix is actually doing something: crediting ZERO older
-  // evidence (the old, buggy behavior) on the exact same ring buffer alone
-  // would have understated it.
+  // evidence (the ring buffer alone) would understate this word's real
+  // reliability - which matters because masteryMean is what
+  // predictWordDifficulty (and, through it, auto mode's Memorized-word
+  // reintroduction ranking) uses to judge how at-risk a word really is.
   const ringBufferAlone = { recentAttempts: recentAttempts };
   assert.ok(L.masteryMean(staleImport) > L.masteryMean(ringBufferAlone), "crediting the older evidence should read as more confident than the ring buffer alone");
+  assert.ok(L.masteryMean(staleImport) > 0.85, `a genuinely 14/15 word should read as high-confidence, not just barely above the ring-buffer-only estimate (got ${L.masteryMean(staleImport)})`);
 });
 
-test("classifyState: a word with a long, strong track record survives a single slip and returns to 'memorized' on the very next correct answer - not stuck needing a fresh 2-streak like a brand new word would", () => {
+test("classifyState: a word with a long, strong track record still needs a fresh 2-in-a-row after a single slip, same as any other word with a mistake in its history - no shortcut via the risk-prediction estimate", () => {
   const h = L.createEmptyWordHistory("steady", 4, 6);
   const results = [];
   for (let i = 0; i < 10; i++) results.push({ correct: true });
   play(h, results);
-  assert.equal(L.classifyState(h), "memorized", "10 straight corrects should be solidly memorized");
+  assert.equal(L.classifyState(h), "memorized", "10 straight corrects on a clean-record word is solidly memorized");
 
   play(h, [{ correct: false }]);
   assert.equal(L.classifyState(h), "incorrect", "the miss itself is still immediately flagged incorrect");
 
   play(h, [{ correct: true }]);
-  assert.equal(
-    L.classifyState(h),
-    "memorized",
-    "one correct answer after a single slip in an otherwise strong history should be enough to restore Memorized"
-  );
+  assert.equal(L.classifyState(h), "learning", "this word now has a mistake in its history, so it needs 2 in a row like any other - just 1 isn't enough");
+
+  play(h, [{ correct: true }]);
+  assert.equal(L.classifyState(h), "memorized", "2 in a row since the slip restores Memorized");
 });
 
-test("classifyState: 2-3 fresh correct answers in a row are UNCONDITIONALLY memorized, even with a couple of mistakes earlier in the word's history (regression: the mastery-estimate path used to also gate this, so old mistakes could keep a just-answered-right-twice word stuck on 'learning')", () => {
+test("classifyState: 2 fresh correct answers in a row are UNCONDITIONALLY memorized even with older mistakes in the word's history - the streak requirement never grows past 2 no matter how many past mistakes there were", () => {
   const h = L.createEmptyWordHistory("recovering", 4, 10);
   play(h, [{ correct: false }, { correct: false }]);
   assert.equal(L.classifyState(h), "incorrect");
 
   play(h, [{ correct: true }, { correct: true }]);
-  assert.equal(
-    L.classifyState(h),
-    "memorized",
-    "2 fresh correct answers in a row must be Memorized regardless of the 2 earlier misses - the streak path is unconditional, not gated behind the decayed mastery estimate"
-  );
+  assert.equal(L.classifyState(h), "memorized", "2 fresh correct answers in a row must be Memorized regardless of the 2 earlier misses");
 });
 
-test("classifyState: a word answered correctly ~55% of the time, NEVER two-in-a-row, settles into 'learning' via the mastery-estimate path rather than reading as confidently memorized", () => {
+test("classifyState: a word answered correctly ~55% of the time, never two-in-a-row, stays 'learning' the whole time (once it's ever been wrong, it takes a real 2-streak, not partial credit)", () => {
   const h = L.createEmptyWordHistory("middling", 4, 8);
   // Deterministic ~55% pattern (9/16), alternating enough that
-  // correctStreak never reaches 2 (so classifyState's unconditional streak
-  // path - see CONFIG.memorizedStreak - never fires here; this test is
-  // specifically about the OTHER path, the decayed mastery estimate).
-  // Ends on a single correct (streak 1, not "incorrect") so the final
-  // classifyState reflects the mastery estimate rather than the "just
-  // missed it" incorrect branch.
+  // correctStreak never reaches 2.
   const pattern = [true, true, false, true, false, true, false, true, false, true, false, true, false, true, false, true];
   for (const correct of pattern) play(h, [{ correct: correct }]);
   assert.ok(h.correctStreak < L.CONFIG.memorizedStreak, "sanity check: this pattern must never let the streak path fire on its own");
@@ -1821,7 +1796,7 @@ test("migrateWordEntry actually writes masteryAlpha/masteryBeta (not stray top-l
   assert.equal(L.classifyState(migrated), "memorized");
 });
 
-test("migrateWordEntry recalibrates an already-cached but under-seeded mastery value upward on every load, without touching a legitimately low one", () => {
+test("migrateWordEntry recalibrates an already-cached but under-seeded mastery value upward on every load, without touching a legitimately low one (this feeds risk PREDICTION/reintroduction ranking, not the memorized label, which is streak-only - see classifyState)", () => {
   // An entry whose CACHED masteryAlpha/masteryBeta under-reports its real
   // 4/5 lifetime record (the exact under-seeding scenario computeWordMastery's
   // older-evidence fix addresses) - simulates data that got the old, buggy
@@ -1832,10 +1807,9 @@ test("migrateWordEntry recalibrates an already-cached but under-seeded mastery v
     lastResult: "correct",
     masteryAlpha: 2.464125, masteryBeta: 1.336625, // pure ring-buffer replay, no older-evidence credit
   };
-  assert.equal(L.classifyState(underSeeded), "learning", "sanity check: the under-seeded value itself reads as not-yet-memorized");
   const recalibrated = L.migrateWordEntry(underSeeded, "recalme", 4, 7);
   assert.ok(recalibrated.masteryAlpha > underSeeded.masteryAlpha, "recalibration should raise the under-seeded value");
-  assert.equal(L.classifyState(recalibrated), "memorized", "with the older evidence credited, this word's real 4/5 record should read as memorized");
+  assert.ok(L.masteryMean(recalibrated) > 0.7, `with the older evidence credited, this word's real 4/5 record should read as high-confidence (got ${L.masteryMean(recalibrated)})`);
 
   // A word whose cached value is ALREADY more confident than a coarse
   // reconstruction from just the raw counts would suggest (e.g. real,

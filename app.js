@@ -1177,6 +1177,7 @@ function rebalanceAutoModeTail() {
       ratio: ratio,
       aiSignals: AI_SIGNALS,
       levelBalance: true, // guarded by the settings.mode === "auto" check above
+      reintroduceMemorized: true, // ditto
     }).filter((w) => !presented.has(w.word.toLowerCase()));
     vocabTest.list = vocabTest.list.slice(0, vocabTest.index + 1).concat(freshTail);
     preloadNextAudio();
@@ -1279,7 +1280,15 @@ document.getElementById("start-test-btn").addEventListener("click", () => {
   // pool.length distinct words anyway, so this is never wasteful, just
   // generous). testTimeUp()/advanceTest() below are what actually end the
   // round.
-  vocabTest.list = Logic.selectQuestions({ pool: pool, historyStore: progressStore, size: pool.length, ratio: ratio, aiSignals: AI_SIGNALS, levelBalance: settings.mode === "auto" });
+  vocabTest.list = Logic.selectQuestions({
+    pool: pool,
+    historyStore: progressStore,
+    size: pool.length,
+    ratio: ratio,
+    aiSignals: AI_SIGNALS,
+    levelBalance: settings.mode === "auto",
+    reintroduceMemorized: settings.mode === "auto",
+  });
   document.getElementById("test-summary").classList.add("hidden");
   // The chosen levels + ratio can genuinely come up empty (e.g. sliders set
   // to 100% incorrect/待複習 but nothing is currently marked incorrect) -
@@ -1327,6 +1336,7 @@ document.getElementById("start-test-btn").addEventListener("click", () => {
         ratio: currentModeRatioFraction(freshPool),
         aiSignals: AI_SIGNALS,
         levelBalance: settings.mode === "auto",
+        reintroduceMemorized: settings.mode === "auto",
       }).filter((w) => !presented.has(w.word.toLowerCase()));
       vocabTest.list = vocabTest.list.slice(0, vocabTest.index + 1).concat(freshList);
       preloadNextAudio();
@@ -1529,7 +1539,7 @@ const REVIEWLIST_SORT_OPTIONS = {
   learning: [
     { value: "slow", label: "反應時間（慢到快）" },
     { value: "tries", label: "嘗試次數（多到少）" },
-    { value: "streak", label: "熟練度（低到高）" },
+    { value: "streak", label: "連續正確次數（少到多）" },
     { value: "recent", label: "最近練習（新到舊）" },
     { value: "oldest", label: "最近練習（舊到新）" },
     { value: "az", label: "字母順序 A→Z" },
@@ -1558,10 +1568,10 @@ function sortReviewListItems(items, mode) {
       arr.sort((a, b) => (b.detail.incorrect || 0) - (a.detail.incorrect || 0));
       break;
     case "streak":
-      // Least-mastered first (see logic.js's masteryMean) - value kept as
-      // "streak" since it's just this list's stored sort-mode key, not
-      // user-facing.
-      arr.sort((a, b) => (a.detail.masteryMean || 0) - (b.detail.masteryMean || 0));
+      // 學習中 only ever holds words recovering from a past mistake (see
+      // Logic.classifyState) - correctStreak is 0 or 1 here, literally how
+      // close each word is to graduating back to 已熟記.
+      arr.sort((a, b) => a.detail.correctStreak - b.detail.correctStreak);
       break;
     case "recent":
       arr.sort((a, b) => b.lastSeen - a.lastSeen);
@@ -1595,9 +1605,13 @@ function sortReviewListItems(items, mode) {
 }
 
 function buildWordCard(detail, showWrongInfo) {
+  // 學習中 only ever contains a word recovering from a past mistake (see
+  // Logic.classifyState) - it needs memorizedStreak (2) correct answers in
+  // a row to graduate back to 已熟記, so the raw streak is the accurate,
+  // concrete thing to show here, not an abstract confidence score.
   const metaParts = showWrongInfo
     ? [`已作答 ${detail.attempts} 次`, `平均反應時間 ${formatMs(detail.avgCorrectResponseMs)}`]
-    : [`熟練度 ${Math.round((detail.masteryMean || 0) * 100)}%`, `平均反應時間 ${formatMs(detail.avgCorrectResponseMs)}`];
+    : [`連續正確 ${detail.correctStreak} / ${Logic.CONFIG.memorizedStreak}`, `平均反應時間 ${formatMs(detail.avgCorrectResponseMs)}`];
 
   return `
     <div class="word-card">
@@ -1632,29 +1646,6 @@ function reviewListPool() {
   return wordsForLevels(levels.length ? levels : [4, 5, 6]);
 }
 
-// The 複習/"學習中" tab's own notion of "learning" - DELIBERATELY narrower
-// than Logic.categorizeWords's own "learning" bucket. categorizeWords also
-// routes an already-Memorized word back into "learning" once its spaced-
-// repetition interval elapses (see its own comment and Logic.isDueForReview) -
-// that's the right thing for QUIZ SELECTION (a due word still needs to be
-// re-askable), but wrong for what this tab displays/counts: a word that's
-// already Memorized and just came up for a periodic retention check-in is
-// not "still learning" by any normal reading of that label, and lumping the
-// two together made this tab's count balloon far past the number of words a
-// learner would actually call "still learning" (a heavy vocabulary
-// accumulates hundreds of due-for-review Memorized words over time). Uses
-// Logic.classifyState directly instead, which - unlike categorizeWords -
-// keeps reporting a due-for-review word as "memorized", exactly matching
-// what its own badge/label shows everywhere else in the app (Progress, the
-// per-answer feedback badge, etc.). Quiz selection itself is untouched -
-// selectQuestions/computeAutoBalanceRatioForPool still go through
-// categorizeWords, so a due word still gets served in regular quizzes (now
-// correctly de-weighted - see CONFIG.backlogDueReviewBaseWeight - rather
-// than excluded).
-function stillLearningWords(pool) {
-  return pool.filter((w) => Logic.classifyState(progressStore[w.word.toLowerCase()] || {}) === "learning");
-}
-
 // The list view's current category's words, filtered by search only - not
 // yet sorted (see currentReviewListItems, which applies whatever sort the
 // user picked). Flashcard-mode decks are built separately (see
@@ -1669,10 +1660,9 @@ function currentReviewListWords() {
     // marked word can be Memorized, still incorrect, whatever; marking
     // never changes state and state never clears a mark.
     words = Logic.filterMarked(pool, progressStore);
-  } else if (reviewListCategory === "incorrect") {
-    words = Logic.categorizeWords(pool, progressStore).incorrect;
   } else {
-    words = stillLearningWords(pool);
+    const cats = Logic.categorizeWords(pool, progressStore);
+    words = reviewListCategory === "incorrect" ? cats.incorrect : cats.learning;
   }
   return words.filter((w) => !search || w.word.toLowerCase().includes(search));
 }
@@ -1701,8 +1691,8 @@ function currentReviewListItems() {
 // the list view happens to be showing right now.
 function wordsInCategory(category) {
   const pool = reviewListPool();
-  if (category === "incorrect") return Logic.categorizeWords(pool, progressStore).incorrect;
-  return stillLearningWords(pool);
+  const cats = Logic.categorizeWords(pool, progressStore);
+  return category === "incorrect" ? cats.incorrect : cats.learning;
 }
 
 // A flashcard-mode deck: `amount` words from `category`, least-recently-
@@ -1889,8 +1879,9 @@ function finishFlashcardSession() {
 // its star button was tapped.
 function updateReviewListCounts() {
   const pool = reviewListPool();
-  document.getElementById("reviewlist-incorrect-count").textContent = Logic.categorizeWords(pool, progressStore).incorrect.length;
-  document.getElementById("reviewlist-learning-count").textContent = stillLearningWords(pool).length;
+  const cats = Logic.categorizeWords(pool, progressStore);
+  document.getElementById("reviewlist-incorrect-count").textContent = cats.incorrect.length;
+  document.getElementById("reviewlist-learning-count").textContent = cats.learning.length;
   document.getElementById("reviewlist-marked-count").textContent = Logic.filterMarked(pool, progressStore).length;
 }
 
@@ -2439,7 +2430,7 @@ function renderWordTable() {
         </td>
         <td>${detail.level}</td>
         <td>${detail.correct} / ${detail.incorrect}</td>
-        <td title="根據近期作答估算的熟練機率，答錯一次會立即拉低但不會歸零；累積到一定信心才算已熟記">${Math.round((detail.masteryMean || 0) * 100)}%</td>
+        <td title="系統預測此字現在被答錯的機率，僅供 Auto 模式判斷要不要把已熟記的字抽回來複習用，不影響「狀態」欄的已熟記／學習中判定">${Math.round((detail.masteryMean || 0) * 100)}%</td>
         <td>${formatMs(detail.avgCorrectResponseMs)}</td>
         <td>${renderWrongAnswerCell(detail)}</td>
         <td><span class="state-badge ${detail.state}">${STATE_LABELS[detail.state]}</span></td>
@@ -2447,10 +2438,10 @@ function renderWordTable() {
     .join("");
 
   container.innerHTML = `
-    <p class="hint">「熟練度」是根據近期作答估算的答對機率，答錯的當下仍會顯示「答錯待複習」，但不會讓熟練度歸零 - 下一次答對就有機會直接回到「已熟記」。滑鼠移到「最近錯誤」可看更多紀錄。</p>
+    <p class="hint">從未答錯的字，答對一次就算「已熟記」；答錯過的字則需要連續答對 ${Logic.CONFIG.memorizedStreak} 次才會回到「已熟記」，答錯一次就歸零重算。已熟記的字理論上不會再出現，但 Auto 模式會依「風險預測」欄位不定期抽幾個風險較高的已熟記單字回來複習，確認沒有忘記。滑鼠移到「最近錯誤」可看更多紀錄。</p>
     <div class="word-table-wrap">
       <table class="word-table">
-        <thead><tr><th>單字</th><th>等級</th><th>對／錯</th><th title="根據近期作答估算的熟練機率">熟練度</th><th>平均反應時間</th><th>最近錯誤</th><th>狀態</th></tr></thead>
+        <thead><tr><th>單字</th><th>等級</th><th>對／錯</th><th title="Auto 模式用來判斷是否該把已熟記的字抽回來複習的風險預測分數">風險預測</th><th>平均反應時間</th><th>最近錯誤</th><th>狀態</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
