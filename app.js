@@ -29,11 +29,17 @@ function loadJSON(key, fallback) {
   }
 }
 
+// Returns whether the write actually succeeded - callers that persist
+// something as important as progressStore (see persistProgress below) need
+// to know, rather than this failing completely silently the way it used
+// to (quota exceeded, private-browsing storage restrictions, or any other
+// localStorage error all land here identically).
 function saveJSON(key, value) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
+    return true;
   } catch (e) {
-    /* storage unavailable - ignore, app still works without persistence */
+    return false;
   }
 }
 
@@ -58,8 +64,16 @@ let settings = Object.assign(
   loadJSON(SETTINGS_KEY, {})
 );
 
+// A save that actually fails here used to be silently swallowed entirely
+// (see saveJSON's own comment) - the app kept working, looking completely
+// normal, while every answer typed from that point on simply wasn't being
+// written to disk, only to look "wiped" whenever the page next reloaded
+// (the in-memory progressStore was never actually behind - the DISK copy
+// was, and nothing ever said so). Surfacing it here means the learner
+// finds out the moment it first happens, while there's still something to
+// do about it (export a backup, free up storage), rather than after.
 function persistProgress() {
-  saveJSON(PROGRESS_KEY, progressStore);
+  if (!saveJSON(PROGRESS_KEY, progressStore)) showStorageWarning();
 }
 
 // Every local mutation to progressStore funnels through this (recordResult,
@@ -75,8 +89,34 @@ function saveProgress() {
 }
 
 function saveSettings() {
-  saveJSON(SETTINGS_KEY, settings);
+  if (!saveJSON(SETTINGS_KEY, settings)) showStorageWarning();
   if (window.VocabSync) window.VocabSync.notifyLocalChange();
+}
+
+// Shown the first time a write to localStorage actually fails - see
+// persistProgress/saveSettings. Deliberately persistent (no auto-hide,
+// unlike showUpdateToast below) since the whole point is that a failed
+// save is easy to miss otherwise, and shown at most once per page load
+// (storageWarningShown) so a run of failed saves - the common case once
+// storage starts rejecting writes, since the SAME underlying problem keeps
+// failing the SAME write - doesn't stack up duplicate banners.
+let storageWarningShown = false;
+function showStorageWarning() {
+  if (storageWarningShown) return;
+  storageWarningShown = true;
+  const banner = document.createElement("div");
+  banner.id = "storage-warning-banner";
+  banner.setAttribute("role", "alert");
+  const messageEl = document.createElement("p");
+  messageEl.textContent =
+    "⚠️ 無法儲存學習紀錄（裝置儲存空間可能已滿，或瀏覽器封鎖了本機儲存）。目前的練習結果可能不會被保留，建議立即到「設定」匯出備份檔，並清理裝置儲存空間。";
+  const dismissBtn = document.createElement("button");
+  dismissBtn.type = "button";
+  dismissBtn.textContent = "知道了";
+  dismissBtn.addEventListener("click", () => banner.remove());
+  banner.appendChild(messageEl);
+  banner.appendChild(dismissBtn);
+  document.body.prepend(banner);
 }
 
 // Reflects `settings` onto the home-screen controls that mirror it (rate

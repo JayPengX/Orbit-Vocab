@@ -536,6 +536,21 @@ async function pushSnapshot() {
   }
 }
 
+// Guarded the same way pushSnapshot is (see that function's own comment) -
+// added after a real report of progress "getting wiped": this used to
+// apply whatever the server returned UNCONDITIONALLY, with none of
+// pushSnapshot's totalAttempts comparison. Every ordinary push is guarded,
+// so the server's own total shouldn't normally regress - but a routine
+// background pull is exactly the wrong place to bet the learner's local
+// data on "shouldn't normally" being airtight (a race between two
+// devices' pushes, a device rejoining with a stale backup, or any bug on
+// the server side would all have been applied here with zero protection
+// and zero warning, silently replacing a device's own further-along
+// progress with something older). Now: if the server is actually BEHIND
+// this device, this pushes the local copy up instead of pulling the
+// lesser one down - the same outcome an ordinary push would reach, just
+// arrived at from the pull side, and it can never erase local progress a
+// background check wasn't supposed to be able to touch.
 async function pullSnapshot(opts) {
   const force = !!(opts && opts.force);
   const passcode = getSyncPasscode();
@@ -549,6 +564,23 @@ async function pullSnapshot(opts) {
       return { ok: true, applied: false, exists: true };
     }
     const remote = await decodeSyncPayload(doc.payload);
+    const remoteTotal = typeof remote.totalAttempts === "number" ? remote.totalAttempts : 0;
+    const localSnapshot = buildSyncSnapshotData();
+    if (remoteTotal < localSnapshot.totalAttempts) {
+      const payload = await encodeSyncPayload(localSnapshot);
+      const result = await writeSyncDoc(passcode, payload);
+      if (!result.ok) throw new Error(result.error);
+      writeLocal(LAST_UPDATE_KEY, result.updateTime);
+      dirty = false;
+      return {
+        ok: true,
+        applied: false,
+        exists: true,
+        pushedInstead: true,
+        localTotalAttempts: localSnapshot.totalAttempts,
+        remoteTotalAttempts: remoteTotal,
+      };
+    }
     const remoteProgress = expandSyncedProgress(remote.progress, remote.exportedAt);
     window.VocabState.applySyncedSnapshot(remoteProgress, remote.settings);
     writeLocal(LAST_UPDATE_KEY, doc.updateTime);
@@ -622,10 +654,14 @@ async function runSyncTick() {
     handleRemoteSyncDeletion();
     return { ok: true, changed: false };
   }
-  if (result.ok && result.applied) {
-    setSyncStatus(`已從其他裝置更新學習紀錄（${new Date().toLocaleTimeString("zh-TW")}）`);
-  } else if (!result.ok) {
+  if (!result.ok) {
     setSyncStatus(result.error, true);
+  } else if (result.applied) {
+    setSyncStatus(`已從其他裝置更新學習紀錄（${new Date().toLocaleTimeString("zh-TW")}）`);
+  } else if (result.pushedInstead) {
+    setSyncStatus(
+      `這台裝置的練習次數比較多（${result.localTotalAttempts} 次，其他裝置 ${result.remoteTotalAttempts} 次），已改為上傳最新進度，避免遺失。`
+    );
   }
   return { ok: result.ok, changed: !!(result.ok && result.applied) };
 }
@@ -980,8 +1016,17 @@ function vocabSyncNow() {
       handleRemoteSyncDeletion();
       return;
     }
-    if (!result.ok) setSyncStatus(result.error, true);
-    else setSyncStatus(result.applied ? "已更新為最新的學習紀錄。" : "已是最新。");
+    if (!result.ok) {
+      setSyncStatus(result.error, true);
+    } else if (result.applied) {
+      setSyncStatus("已更新為最新的學習紀錄。");
+    } else if (result.pushedInstead) {
+      setSyncStatus(
+        `這台裝置的練習次數比較多（${result.localTotalAttempts} 次，其他裝置 ${result.remoteTotalAttempts} 次），已改為上傳最新進度，避免遺失。`
+      );
+    } else {
+      setSyncStatus("已是最新。");
+    }
   });
 }
 
