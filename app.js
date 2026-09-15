@@ -165,8 +165,28 @@ function updateAutoRatioHint() {
   const levels = selectedLevels();
   const pool = wordsForLevels(levels.length ? levels : [4, 5, 6]);
   const ratio = Logic.computeAutoBalanceRatioForPool(pool, progressStore);
-  hintEl.textContent =
-    `目前配比：新字 ${Math.round(ratio.new * 100)}%・答錯 ${Math.round(ratio.incorrect * 100)}%・學習中 ${Math.round(ratio.learning * 100)}%`;
+
+  // The new/incorrect/學習中 ratio above is only part of what an auto-mode
+  // round actually contains - selectQuestions ALSO carves out a separate
+  // slice for at-risk Memorized words (see Logic.selectReintroductionCandidates),
+  // on top of this split, not counted in it. Showing only the three-way
+  // ratio here made a round that included reintroduced Memorized words look
+  // inexplicable next to a hint claiming e.g. "100% 答錯" - this replicates
+  // the same eligibility check selectQuestions itself does, so the hint
+  // matches what a round will actually contain.
+  const models = Logic.buildPriorityModels(progressStore, AI_SIGNALS);
+  const cats = Logic.categorizeWords(pool, progressStore);
+  const eligible = Logic.selectReintroductionCandidates(cats.memorized, progressStore, models, Math.random);
+  const reintroduceShare = eligible.length ? Logic.CONFIG.autoBalanceReintroduceShare : 0;
+  const remaining = 1 - reintroduceShare;
+
+  const parts = [
+    `新字 ${Math.round(ratio.new * remaining * 100)}%`,
+    `答錯 ${Math.round(ratio.incorrect * remaining * 100)}%`,
+    `學習中 ${Math.round(ratio.learning * remaining * 100)}%`,
+  ];
+  if (reintroduceShare > 0) parts.push(`複習已熟記 ${Math.round(reintroduceShare * 100)}%`);
+  hintEl.textContent = `目前配比：${parts.join("・")}`;
 }
 
 document.getElementById("mode-picker").addEventListener("change", (e) => {
