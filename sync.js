@@ -1086,6 +1086,29 @@ function initSyncUI() {
 
 initSyncUI();
 
+// Whether importing `candidateProgress` (see app.js's manual import flow)
+// would look like a REGRESSION - less total recorded practice (see
+// computeTotalAttempts's own comment on why total attempts, not word
+// count, is the right "how far along" measure) than what this device
+// already has. Only matters at all when this device is synced: an
+// unsynced device's local backup is entirely the user's own business to
+// overwrite however they like. When it IS synced, silently allowing the
+// import isn't actually dangerous to the SERVER (pushSnapshot's own
+// totalAttempts guard already refuses to ever push something behind it -
+// see that function's comment), but it's a confusing, easily-missed
+// surprise for the USER: the import would appear to succeed, then get
+// silently reverted a few seconds later the moment the next sync tick
+// pulls the (further-along) server data back down - the exact same
+// "silently undoes itself" trap unlinkAfterReset's own comment already
+// describes for reset, just reached from a different door. Refusing the
+// import up front, with a clear reason, is far better than either
+// silently discarding it a moment later or letting the user rebuild trust
+// in a progress screen that's about to change out from under them again.
+function wouldRegressLocalProgress(candidateProgress) {
+  if (!isSyncConfigured()) return false;
+  return computeTotalAttempts(candidateProgress) < computeTotalAttempts(window.VocabState.getProgress());
+}
+
 window.VocabSync = {
   notifyLocalChange: notifyLocalChange,
   onVocabReady: onVocabReady,
@@ -1097,4 +1120,6 @@ window.VocabSync = {
   // under a name that reads correctly from a caller outside this file.
   syncNow: syncOnAppActive,
   reconcileBeforeStarting: reconcileBeforeStarting,
+  isSyncConfigured: isSyncConfigured,
+  wouldRegressProgress: wouldRegressLocalProgress,
 };

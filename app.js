@@ -2434,6 +2434,19 @@ document.getElementById("import-progress-file").addEventListener("change", (e) =
       return;
     }
 
+    // Refuse a backup that would REGRESS progress while this device is
+    // synced - see sync.js's wouldRegressProgress for the full reasoning.
+    // Checked before the confirm dialog below: there's no point asking
+    // "are you sure" for an import that's about to be refused either way.
+    if (window.VocabSync && window.VocabSync.wouldRegressProgress(importedProgress)) {
+      showImportStatus(
+        "匯入失敗：這份備份的練習紀錄比目前同步中的進度少，為了避免覆蓋掉其他裝置已經累積的進度，已取消匯入。" +
+          "如果你確定要用這份備份取代目前進度，請先到上面「跨裝置同步」按「解除同步」，再重新匯入一次。",
+        true
+      );
+      return;
+    }
+
     const wordCount = Object.keys(importedProgress).length;
     const confirmed = await showConfirmDialog(
       `即將匯入備份檔（${wordCount} 個單字的紀錄${parsed.exportedAt ? `，匯出於 ${parsed.exportedAt.slice(0, 10)}` : ""}）。\n\n` +
