@@ -294,18 +294,11 @@
 
       <h2>🔊 離線發音快取</h2>
       <p class="hint">
-        平常播放發音時，每個字第一次播放後就會自動存到這台裝置上，之後不管有沒有網路都能
-        立刻重播；但還沒播放過的字，第一次還是得連網下載，網路不好時就會等比較久，甚至改用
-        音質較差的系統語音。按下面的按鈕可以把全部 3,060 個單字的發音（約 30 MB）一次下載
-        起來，下載完之後練習時完全不需要等網路，速度也不會再受網路好壞影響。已經下載過的字
-        會自動跳過，可以隨時中斷、之後再繼續下載。
+        全部 3,060 個單字的發音（約 30 MB）會在背景自動下載並存到這台裝置上，不需要手動
+        操作。下載完之後不管有沒有網路，發音都會直接從裝置本身秒開，不會再受網路好壞影響。
       </p>
       <p class="hint" id="audio-cache-status">正在檢查快取狀態…</p>
       <div class="progress-bar" id="audio-cache-progress-bar"><div class="progress-fill" id="audio-cache-progress-fill"></div></div>
-      <div class="row actions">
-        <button class="btn primary" id="audio-cache-download-btn" disabled>📥 下載全部發音</button>
-        <button class="btn secondary hidden" id="audio-cache-cancel-btn">取消下載</button>
-      </div>
 
       <h2>🔄 跨裝置同步</h2>
       <p class="hint">把學習紀錄同步到你的其他裝置。先按「建立新同步」，再到其他裝置輸入代碼與密碼「加入同步」。</p>
