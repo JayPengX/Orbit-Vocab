@@ -723,19 +723,25 @@
     return grams;
   }
 
+  // Jaccard similarity (intersection over union) between two ALREADY-BUILT
+  // bigram sets - split out from bigramSimilarity below so a caller that
+  // needs one side's set repeatedly (see computeInterferenceModel's risk())
+  // can build it once instead of on every comparison.
+  function bigramSetSimilarity(a, b) {
+    if (!a.size || !b.size) return 0;
+    let intersection = 0;
+    for (const g of a) if (b.has(g)) intersection += 1;
+    const union = a.size + b.size - intersection;
+    return union > 0 ? intersection / union : 0;
+  }
+
   // Jaccard similarity (intersection over union) between two words' bigram
   // sets - a standard, simple measure of orthographic similarity (the same
   // idea behind fuzzy-matching/spelling-suggestion tools): 1 for identical
   // spelling, 0 for nothing in common, scaling smoothly in between for
   // words that share some but not all of their letter-pairs.
   function bigramSimilarity(wordA, wordB) {
-    const a = new Set(bigramsOf(wordA));
-    const b = new Set(bigramsOf(wordB));
-    if (!a.size || !b.size) return 0;
-    let intersection = 0;
-    for (const g of a) if (b.has(g)) intersection += 1;
-    const union = a.size + b.size - intersection;
-    return union > 0 ? intersection / union : 0;
+    return bigramSetSimilarity(new Set(bigramsOf(wordA)), new Set(bigramsOf(wordB)));
   }
 
   // Whether a word contains any letter immediately repeated (e.g.
@@ -893,12 +899,27 @@
       }
     }
 
+    // Built once per struggling word here rather than inside risk() below -
+    // risk() is called once per pool candidate every time this model is
+    // built (rankCandidates -> computeSelectionWeight -> predictWordDifficulty
+    // -> here), so without this a struggling word's bigram set was being
+    // rebuilt from scratch candidate-count times over. With a sizeable
+    // struggling backlog and a large pool (auto mode's live mid-round
+    // rebalance - see app.js's rebalanceAutoModeTail - runs this on every
+    // single answer, over the WHOLE pool), that redundant rebuilding was
+    // the dominant cost of the entire selection call, multiple seconds on a
+    // large backlog: this is what actually fixes it, not just defers it.
+    const strugglingBigramSets = strugglingWords.map((w) => new Set(bigramsOf(w)));
+
     return {
       risk: (word) => {
+        const candidateBigrams = new Set(bigramsOf(word));
         let best = 0;
-        for (const struggling of strugglingWords) {
-          const sim = bigramSimilarity(word, struggling);
-          if (sim > best) best = sim;
+        if (candidateBigrams.size) {
+          for (const strugglingBigrams of strugglingBigramSets) {
+            const sim = bigramSetSimilarity(candidateBigrams, strugglingBigrams);
+            if (sim > best) best = sim;
+          }
         }
         const semanticRisk = semanticRiskWords.has((word || "").toLowerCase()) ? 1 : 0;
         return clamp(best + CONFIG.difficultySemanticWeight * semanticRisk, 0, 1);

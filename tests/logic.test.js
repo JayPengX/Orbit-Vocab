@@ -1258,6 +1258,24 @@ test("computeInterferenceModel without an aiSignals argument behaves exactly as 
   assert.equal(model.risk("orange"), 0);
 });
 
+test("computeInterferenceModel's risk() stays fast across a large pool with a realistic struggling backlog (regression guard: risk() used to rebuild every struggling word's bigram set from scratch on every single call, making selectQuestions multiple seconds on a large pool - see rankCandidates/computeSelectionWeight and app.js's rebalanceAutoModeTail, which calls this on every answer in auto mode)", () => {
+  const historyStore = {};
+  const strugglingWords = makePool(300, 4, "bad").map((w) => w.word);
+  for (const w of strugglingWords) {
+    const h = L.createEmptyWordHistory(w, 4, w.length);
+    h.attempts = 1; h.incorrect = 1; h.lastResult = "incorrect";
+    historyStore[w] = h;
+  }
+  const model = L.computeInterferenceModel(historyStore);
+  assert.ok(model);
+
+  const candidates = makePool(3000, 4, "cand").map((w) => w.word);
+  const start = Date.now();
+  for (const w of candidates) model.risk(w);
+  const elapsedMs = Date.now() - start;
+  assert.ok(elapsedMs < 300, `risk() over ${candidates.length} candidates x ${strugglingWords.length} struggling words took ${elapsedMs}ms - should stay well under half a second (rebuilding every struggling word's bigram set per call took 500ms+ here)`);
+});
+
 test("computeDifficultyBaseline is still null with no attempted words and no usable aiSignals (unchanged pre-AI-signals behavior)", () => {
   assert.equal(L.computeDifficultyBaseline({}), null);
   assert.equal(L.computeDifficultyBaseline({}, {}), null);

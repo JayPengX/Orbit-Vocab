@@ -1106,22 +1106,40 @@ function preloadNextAudio() {
 // already presented (up to and including the current word) is left
 // completely alone - only what comes after is subject to change - so
 // results already shown/recorded are never altered, only what's asked next.
+//
+// The actual rebuild (re-running the prediction models + ranking over the
+// WHOLE pool - see Logic.selectQuestions) is real work, easily tens of ms
+// and, on a learner with a sizeable incorrect backlog, more - see
+// computeInterferenceModel. Doing it inline in the submit handler used to
+// delay THAT SAME ANSWER's own feedback and "下一題" button label behind it
+// (nothing paints until the handler's call stack finishes), which is what
+// made auto mode feel laggier than the other modes even though they run
+// the exact same models - they just only run them once per round, not once
+// per answer. Deferred one tick via setTimeout so the feedback/button
+// paint immediately and this runs after, off the critical path; there's
+// always at least the time it takes to read the feedback before advancing,
+// so it's done well before advanceTest() ever needs the rebuilt list.
 function rebalanceAutoModeTail() {
   if (settings.mode !== "auto" || !vocabTest.inProgress || vocabTest.customDeck) return;
   const pool = vocabTest.pool;
   if (!pool || !pool.length) return;
-  const presented = new Set(vocabTest.list.slice(0, vocabTest.index + 1).map((w) => w.word.toLowerCase()));
-  const ratio = Logic.computeAutoBalanceRatioForPool(pool, progressStore);
-  const freshTail = Logic.selectQuestions({
-    pool: pool,
-    historyStore: progressStore,
-    size: pool.length,
-    ratio: ratio,
-    aiSignals: AI_SIGNALS,
-    levelBalance: true, // guarded by the settings.mode === "auto" check above
-  }).filter((w) => !presented.has(w.word.toLowerCase()));
-  vocabTest.list = vocabTest.list.slice(0, vocabTest.index + 1).concat(freshTail);
-  preloadNextAudio();
+  setTimeout(() => {
+    // Re-check: the round may have finished, or the mode/deck may have
+    // changed, in the tick between scheduling this and it actually running.
+    if (settings.mode !== "auto" || !vocabTest.inProgress || vocabTest.customDeck) return;
+    const presented = new Set(vocabTest.list.slice(0, vocabTest.index + 1).map((w) => w.word.toLowerCase()));
+    const ratio = Logic.computeAutoBalanceRatioForPool(pool, progressStore);
+    const freshTail = Logic.selectQuestions({
+      pool: pool,
+      historyStore: progressStore,
+      size: pool.length,
+      ratio: ratio,
+      aiSignals: AI_SIGNALS,
+      levelBalance: true, // guarded by the settings.mode === "auto" check above
+    }).filter((w) => !presented.has(w.word.toLowerCase()));
+    vocabTest.list = vocabTest.list.slice(0, vocabTest.index + 1).concat(freshTail);
+    preloadNextAudio();
+  }, 0);
 }
 
 // A customDeck round (see startReviewDeckTest) is never time-boxed - it
