@@ -167,17 +167,19 @@ function updateAutoRatioHint() {
   const ratio = Logic.computeAutoBalanceRatioForPool(pool, progressStore);
 
   // The new/incorrect/學習中 ratio above is only part of what an auto-mode
-  // round actually contains - selectQuestions ALSO carves out a separate
-  // slice for at-risk Memorized words (see Logic.selectReintroductionCandidates),
-  // on top of this split, not counted in it. Showing only the three-way
-  // ratio here made a round that included reintroduced Memorized words look
-  // inexplicable next to a hint claiming e.g. "100% 答錯" - this replicates
-  // the same eligibility check selectQuestions itself does, so the hint
-  // matches what a round will actually contain.
+  // round actually contains - selectQuestions ALSO carves out a separate,
+  // RISK-DRIVEN slice for at-risk Memorized words (see
+  // Logic.computeReintroduceShare - it scales with how much actual risk is
+  // in the Memorized pool, not a flat percentage), on top of this split,
+  // not counted in it. Showing only the three-way ratio here made a round
+  // that included reintroduced Memorized words look inexplicable next to a
+  // hint claiming e.g. "100% 答錯" - this replicates the exact same
+  // scoring selectQuestions itself does, so the hint matches what a round
+  // will actually contain.
   const models = Logic.buildPriorityModels(progressStore, AI_SIGNALS);
   const cats = Logic.categorizeWords(pool, progressStore);
-  const eligible = Logic.selectReintroductionCandidates(cats.memorized, progressStore, models, Math.random);
-  const reintroduceShare = eligible.length ? Logic.CONFIG.autoBalanceReintroduceShare : 0;
+  const scored = Logic.scoreMemorizedForReintroduction(cats.memorized, progressStore, models, Math.random);
+  const reintroduceShare = Logic.computeReintroduceShare(scored);
   const remaining = 1 - reintroduceShare;
 
   const parts = [
@@ -185,7 +187,8 @@ function updateAutoRatioHint() {
     `答錯 ${Math.round(ratio.incorrect * remaining * 100)}%`,
     `學習中 ${Math.round(ratio.learning * remaining * 100)}%`,
   ];
-  if (reintroduceShare > 0) parts.push(`複習已熟記 ${Math.round(reintroduceShare * 100)}%`);
+  const reintroducePct = Math.round(reintroduceShare * 100);
+  if (reintroducePct > 0) parts.push(`複習已熟記 ${reintroducePct}%`);
   hintEl.textContent = `目前配比：${parts.join("・")}`;
 }
 

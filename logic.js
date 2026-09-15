@@ -41,7 +41,7 @@
     // Decayed Beta-Bernoulli estimate of how likely you are to get a word
     // right, used ONLY for predicting difficulty/risk (predictWordDifficulty,
     // and - via that - which Memorized words auto mode reintroduces for
-    // review, see selectReintroductionCandidates) - NOT for the "memorized"
+    // review, see scoreMemorizedForReintroduction) - NOT for the "memorized"
     // label itself (see classifyState, which is purely correctness-count
     // based, no score or confidence ramp). Every attempt updates two
     // running pseudo-counts, masteryAlpha (evidence for "correct") and
@@ -218,7 +218,7 @@
     difficultySemanticWeight: 0.3,
 
     // ---- Reintroducing Memorized words (auto mode only - see
-    // selectReintroductionCandidates/selectQuestions's own
+    // scoreMemorizedForReintroduction/selectQuestions's own
     // opts.reintroduceMemorized) ----
     // A "Memorized" word used to be retired from selection FOREVER, then
     // (a later revision) re-entered rotation on a blind calendar schedule
@@ -226,31 +226,45 @@
     // elapsed - no matter whether that word had any actual chance of now
     // being wrong. Both are gone: a Memorized word is never automatically
     // rescheduled by classifyState/categorizeWords any more (it simply
-    // stays "memorized" - see categorizeWords). Instead, auto mode alone
-    // reserves this fraction of each round for Memorized words the EXISTING
+    // stays "memorized" - see categorizeWords). Instead, auto mode reserves
+    // a slice of each round for Memorized words the EXISTING
     // difficulty-prediction system (predictWordDifficulty - the same
     // baseline/interference/own-error-rate model already used for
     // new/incorrect/learning words) currently rates as at real risk of
     // being gotten wrong - reusing data already being tracked (length,
     // level, orthographic interference with current struggles, its own
-    // decayed mastery estimate) rather than a fixed calendar. 0 disables
-    // reintroduction entirely.
-    autoBalanceReintroduceShare: 0.12,
-    // A Memorized word must clear this predicted-risk bar (see
-    // predictWordDifficulty, 0..1) to be ELIGIBLE for reintroduction at
-    // all - the share above is a ceiling, not a quota to fill regardless of
-    // whether anything actually looks at-risk. With no eligible words this
-    // round, the share reserved for them simply goes unused rather than
-    // forcing in a handful of very-low-risk Memorized words just to hit a
-    // percentage.
+    // decayed mastery estimate) rather than a fixed calendar.
+    //
+    // How big that slice is is ITSELF risk-driven (see
+    // computeReintroduceShare), not a flat percentage: a Memorized word
+    // must first clear this predicted-risk bar (0..1) to count as at-risk
+    // at all, then each one's EXCESS risk above this bar (not just a yes/no)
+    // adds to a "reintroduction pressure" total - a pool with a handful of
+    // barely-qualifying words produces a small pressure and a small share;
+    // one with many/severely at-risk words saturates toward the ceiling
+    // below. With nothing qualifying, pressure is 0 and the share reserved
+    // for reintroduction is 0 - it never forces in low-risk Memorized words
+    // just to fill a quota.
     autoBalanceReintroduceMinRisk: 0.35,
+    // Total excess-risk pressure (see above) at which the reintroduction
+    // share saturates at its ceiling - e.g. roughly 8-10 solidly at-risk
+    // words (excess risk around 0.5-0.65 each), or a larger number of
+    // barely-qualifying ones. Mirrors autoBalanceBacklogSaturation's own
+    // shape for the new/incorrect/learning split, just scaled for a much
+    // smaller, secondary slice of the round.
+    autoBalanceReintroducePressureSaturation: 5,
+    // The reintroduction share never exceeds this fraction of a round, no
+    // matter how much at-risk Memorized content exists - reintroduction is
+    // meant to be a light check on retention, not something that can crowd
+    // out the new/incorrect/learning split entirely.
+    autoBalanceReintroduceMaxShare: 0.12,
     // Upper bound on how many Memorized words get their risk computed and
-    // ranked per round, applied BEFORE the share/count above - protects
-    // against the cost of scoring every single Memorized word in a large,
-    // long-used vocabulary (predictWordDifficulty is not free) when only a
-    // handful will ever be selected anyway. A weighted random pre-sample
-    // of the full Memorized pool up to this size is scored; well within
-    // "way more than any round could ever use," so it doesn't meaningfully
+    // ranked per round, applied BEFORE the eligibility/pressure math above -
+    // protects against the cost of scoring every single Memorized word in a
+    // large, long-used vocabulary (predictWordDifficulty is not free) when
+    // only a handful will ever be selected anyway. A random pre-sample of
+    // the full Memorized pool up to this size is scored; well within "way
+    // more than any round could ever use," so it doesn't meaningfully
     // narrow what's eligible.
     autoBalanceReintroduceScoringCap: 300,
 
@@ -1395,7 +1409,7 @@
     return {
       weightOf: (level, category) => {
         if (level == null) return 1;
-        // "reintroduce" (see selectReintroductionCandidates) is review-type
+        // "reintroduce" (see scoreMemorizedForReintroduction) is review-type
         // content (a Memorized word being brought back), not first exposure,
         // so it shares incorrect/learning's table - a level with heavier
         // overall backlog pressure gets a slightly bigger share of
@@ -1412,10 +1426,11 @@
   // earlier version, a Memorized word is never automatically rerouted back
   // into "learning" by this function on any kind of schedule. Auto mode's
   // OWN mechanism for bringing Memorized words back for review is
-  // selectReintroductionCandidates (prediction-based, not this function) -
-  // see selectQuestions's own opts.reintroduceMemorized. `now` is currently
-  // unused (kept so existing callers that pass it - and any that want a
-  // specific moment for future use, e.g. tests - don't need updating).
+  // scoreMemorizedForReintroduction/computeReintroduceShare (prediction-based,
+  // not this function) - see selectQuestions's own opts.reintroduceMemorized.
+  // `now` is currently unused (kept so existing callers that pass it - and
+  // any that want a specific moment for future use, e.g. tests - don't need
+  // updating).
   function categorizeWords(pool, historyStore, now) {
     const unseen = [];
     const incorrect = [];
@@ -1682,35 +1697,59 @@
 
   /* ---------- Question selection: ratio-driven, one mode ---------- */
 
-  // Which Memorized words auto mode should bring back for review this
-  // round (see CONFIG's own "Reintroducing Memorized words" comment) -
-  // reuses the exact same difficulty-prediction model already built for
-  // new/incorrect/learning words (`models`, from buildPriorityModels), so a
-  // Memorized word that now looks similar to a currently-struggling word,
-  // or whose own decayed track record has started slipping, surfaces
-  // first. `random` pre-samples down to CONFIG.autoBalanceReintroduceScoringCap
-  // BEFORE scoring when the Memorized pool is larger than that, so a large,
+  // Scores Memorized words for reintroduction (see CONFIG's own
+  // "Reintroducing Memorized words" comment) - reuses the exact same
+  // difficulty-prediction model already built for new/incorrect/learning
+  // words (`models`, from buildPriorityModels), so a Memorized word that
+  // now looks similar to a currently-struggling word, or whose own decayed
+  // track record has started slipping, scores as at-risk. `random`
+  // pre-samples down to CONFIG.autoBalanceReintroduceScoringCap BEFORE
+  // scoring when the Memorized pool is larger than that, so a large,
   // long-used vocabulary doesn't pay to run predictWordDifficulty over
   // every single Memorized word every round just to pick a handful.
-  // Returns the eligible subset (predicted risk >= autoBalanceReintroduceMinRisk),
-  // sorted highest-risk first - selectQuestions still runs this through the
-  // normal rankCandidates path (category "reintroduce") for the final
-  // count/level-balance/response-time-adjusted selection, same as every
-  // other category.
-  function selectReintroductionCandidates(memorizedWords, historyStore, models, random) {
+  // Returns [{w, risk}] - the single source both rankEligibleForReintroduction
+  // and computeReintroduceShare below work from, so a round's candidate
+  // list and its share are always computed from the SAME sample, never two
+  // independently-drawn ones that could disagree.
+  function scoreMemorizedForReintroduction(memorizedWords, historyStore, models, random) {
     if (!memorizedWords.length) return [];
     const sampled =
       memorizedWords.length > CONFIG.autoBalanceReintroduceScoringCap
         ? shuffle(memorizedWords, random).slice(0, CONFIG.autoBalanceReintroduceScoringCap)
         : memorizedWords;
-    const scored = sampled.map((w) => ({
+    return sampled.map((w) => ({
       w: w,
       risk: predictWordDifficulty(w.word, w.level, historyFor(historyStore, w.word), models.difficultyBaseline, models.interferenceModel, w.pos),
     }));
+  }
+
+  // The eligible subset of an already-scored Memorized pool (see
+  // scoreMemorizedForReintroduction) - predicted risk >= autoBalanceReintroduceMinRisk,
+  // sorted highest-risk first. selectQuestions still runs this through the
+  // normal rankCandidates path (category "reintroduce") for the final
+  // count/level-balance/response-time-adjusted selection, same as every
+  // other category.
+  function rankEligibleForReintroduction(scored) {
     return scored
       .filter((s) => s.risk >= CONFIG.autoBalanceReintroduceMinRisk)
       .sort((a, b) => b.risk - a.risk)
       .map((s) => s.w);
+  }
+
+  // How much of a round to reserve for reintroduction, driven by how much
+  // actual risk is in the (already-scored) Memorized pool - not a flat
+  // percentage (see CONFIG's own comment). Sums each word's EXCESS risk
+  // above autoBalanceReintroduceMinRisk (0 for anything below it, so
+  // non-qualifying words contribute nothing) into a "pressure" total, then
+  // maps that through the same saturating-toward-a-ceiling shape
+  // computeAutoBalanceRatio uses for the review share: a handful of
+  // barely-qualifying words yields a small share, a pool with many or
+  // severely at-risk words saturates toward autoBalanceReintroduceMaxShare,
+  // and zero qualifying words yields exactly 0 - never a forced quota.
+  function computeReintroduceShare(scored) {
+    let pressure = 0;
+    for (const s of scored) pressure += Math.max(0, s.risk - CONFIG.autoBalanceReintroduceMinRisk);
+    return clamp(pressure / CONFIG.autoBalanceReintroducePressureSaturation, 0, 1) * CONFIG.autoBalanceReintroduceMaxShare;
   }
 
   // Target counts for each of the three selectable categories, scaled from
@@ -1740,12 +1779,12 @@
   // from the fallback redistribution below - a slider set to 0 means never
   // show that category, not "only as a last resort"). Memorized words are
   // otherwise excluded - they've graduated - UNLESS `opts.reintroduceMemorized`
-  // is set (auto mode only - see app.js), in which case a small share of
-  // the round (CONFIG.autoBalanceReintroduceShare) is CARVED OUT of the
+  // is set (auto mode only - see app.js), in which case a share of the round
+  // - sized by how much actual risk is in the Memorized pool, see
+  // computeReintroduceShare, not a flat percentage - is CARVED OUT of the
   // new/incorrect/learning split above for Memorized words the prediction
-  // model rates as currently at risk (see selectReintroductionCandidates) -
-  // the round's total `size` is unchanged either way, this only decides
-  // what fills it.
+  // model rates as currently at risk. The round's total `size` is unchanged
+  // either way, this only decides what fills it.
   function selectQuestions(opts) {
     const o = opts || {};
     const pool = o.pool || [];
@@ -1770,12 +1809,16 @@
 
     let reintroduceRanked = [];
     let reintroduceTarget = 0;
-    if (o.reintroduceMemorized && memorized.length && CONFIG.autoBalanceReintroduceShare > 0) {
-      const desired = Math.min(size, Math.round(size * CONFIG.autoBalanceReintroduceShare));
-      const eligible = selectReintroductionCandidates(memorized, historyStore, models, random);
-      if (eligible.length) {
-        reintroduceRanked = rankCandidates(eligible, historyStore, random, now, models, "reintroduce");
-        reintroduceTarget = Math.min(desired, reintroduceRanked.length);
+    if (o.reintroduceMemorized && memorized.length) {
+      const scored = scoreMemorizedForReintroduction(memorized, historyStore, models, random);
+      const share = computeReintroduceShare(scored);
+      if (share > 0) {
+        const eligible = rankEligibleForReintroduction(scored);
+        if (eligible.length) {
+          reintroduceRanked = rankCandidates(eligible, historyStore, random, now, models, "reintroduce");
+          const desired = Math.min(size, Math.round(size * share));
+          reintroduceTarget = Math.min(desired, reintroduceRanked.length);
+        }
       }
     }
 
@@ -1921,7 +1964,9 @@
     filterMarked: filterMarked,
     selectReviewBatch: selectReviewBatch,
     computeQuestionTargets: computeQuestionTargets,
-    selectReintroductionCandidates: selectReintroductionCandidates,
+    scoreMemorizedForReintroduction: scoreMemorizedForReintroduction,
+    rankEligibleForReintroduction: rankEligibleForReintroduction,
+    computeReintroduceShare: computeReintroduceShare,
     computeAutoBalanceRatio: computeAutoBalanceRatio,
     computeBacklogPressure: computeBacklogPressure,
     computeAutoBalanceRatioForPool: computeAutoBalanceRatioForPool,
