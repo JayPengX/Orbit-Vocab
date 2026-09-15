@@ -1632,6 +1632,29 @@ function reviewListPool() {
   return wordsForLevels(levels.length ? levels : [4, 5, 6]);
 }
 
+// The 複習/"學習中" tab's own notion of "learning" - DELIBERATELY narrower
+// than Logic.categorizeWords's own "learning" bucket. categorizeWords also
+// routes an already-Memorized word back into "learning" once its spaced-
+// repetition interval elapses (see its own comment and Logic.isDueForReview) -
+// that's the right thing for QUIZ SELECTION (a due word still needs to be
+// re-askable), but wrong for what this tab displays/counts: a word that's
+// already Memorized and just came up for a periodic retention check-in is
+// not "still learning" by any normal reading of that label, and lumping the
+// two together made this tab's count balloon far past the number of words a
+// learner would actually call "still learning" (a heavy vocabulary
+// accumulates hundreds of due-for-review Memorized words over time). Uses
+// Logic.classifyState directly instead, which - unlike categorizeWords -
+// keeps reporting a due-for-review word as "memorized", exactly matching
+// what its own badge/label shows everywhere else in the app (Progress, the
+// per-answer feedback badge, etc.). Quiz selection itself is untouched -
+// selectQuestions/computeAutoBalanceRatioForPool still go through
+// categorizeWords, so a due word still gets served in regular quizzes (now
+// correctly de-weighted - see CONFIG.backlogDueReviewBaseWeight - rather
+// than excluded).
+function stillLearningWords(pool) {
+  return pool.filter((w) => Logic.classifyState(progressStore[w.word.toLowerCase()] || {}) === "learning");
+}
+
 // The list view's current category's words, filtered by search only - not
 // yet sorted (see currentReviewListItems, which applies whatever sort the
 // user picked). Flashcard-mode decks are built separately (see
@@ -1646,9 +1669,10 @@ function currentReviewListWords() {
     // marked word can be Memorized, still incorrect, whatever; marking
     // never changes state and state never clears a mark.
     words = Logic.filterMarked(pool, progressStore);
+  } else if (reviewListCategory === "incorrect") {
+    words = Logic.categorizeWords(pool, progressStore).incorrect;
   } else {
-    const cats = Logic.categorizeWords(pool, progressStore);
-    words = reviewListCategory === "incorrect" ? cats.incorrect : cats.learning;
+    words = stillLearningWords(pool);
   }
   return words.filter((w) => !search || w.word.toLowerCase().includes(search));
 }
@@ -1677,8 +1701,8 @@ function currentReviewListItems() {
 // the list view happens to be showing right now.
 function wordsInCategory(category) {
   const pool = reviewListPool();
-  const cats = Logic.categorizeWords(pool, progressStore);
-  return category === "incorrect" ? cats.incorrect : cats.learning;
+  if (category === "incorrect") return Logic.categorizeWords(pool, progressStore).incorrect;
+  return stillLearningWords(pool);
 }
 
 // A flashcard-mode deck: `amount` words from `category`, least-recently-
@@ -1865,9 +1889,8 @@ function finishFlashcardSession() {
 // its star button was tapped.
 function updateReviewListCounts() {
   const pool = reviewListPool();
-  const cats = Logic.categorizeWords(pool, progressStore);
-  document.getElementById("reviewlist-incorrect-count").textContent = cats.incorrect.length;
-  document.getElementById("reviewlist-learning-count").textContent = cats.learning.length;
+  document.getElementById("reviewlist-incorrect-count").textContent = Logic.categorizeWords(pool, progressStore).incorrect.length;
+  document.getElementById("reviewlist-learning-count").textContent = stillLearningWords(pool).length;
   document.getElementById("reviewlist-marked-count").textContent = Logic.filterMarked(pool, progressStore).length;
 }
 
