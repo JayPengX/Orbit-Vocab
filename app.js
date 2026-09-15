@@ -203,6 +203,7 @@ function recordResult(item, correct, responseMs, answer) {
     timestamp: Date.now(),
     level: item.level,
     length: item.word.length,
+    pos: item.pos,
   });
   saveProgress();
   answersSinceForcedSync += 1;

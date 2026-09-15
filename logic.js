@@ -165,6 +165,49 @@
     // similarity is still real signal on its own and shouldn't be discarded
     // just because AI signals are also available.
     difficultySemanticWeight: 0.3,
+    // How much more heavily a MORE RECENT attempt counts than an older one
+    // when computing a word's own empirical error rate (see
+    // computeOwnRecencyWeightedErrorRate) - each attempt back through
+    // history.recentAttempts (newest first) counts this fraction of the one
+    // after it. A word the learner used to miss but has gotten right the
+    // last several times in a row should read as LOW risk now, not still be
+    // dragged down by mistakes from long ago just because the lifetime
+    // ratio hasn't caught up - and the reverse: a word that used to be easy
+    // but has recently started slipping should read as risky NOW, not hide
+    // behind an old streak. 1 would weight every attempt equally (the old
+    // flat lifetime-ratio behavior); lower values lean harder on the most
+    // recent attempts.
+    difficultyRecencyDecay: 0.85,
+
+    // ---- Spaced-repetition scheduling (see recordAttempt's SM-2-style
+    // interval/ease update, and isDueForReview) ----
+    // A "Memorized" word (see classifyState) used to be retired from
+    // selection FOREVER the moment its streak hit memorizedStreak - no
+    // forgetting curve, no re-check that it actually stuck. These fields
+    // give every word its own review schedule (a simplified SM-2: a
+    // correct answer grows the interval before it's due again, scaled by
+    // an ease factor that itself grows slightly with each success and
+    // shrinks on a miss; an incorrect answer collapses the interval back to
+    // due-now) so a Memorized word quietly re-enters the "learning"
+    // selection pool once its interval elapses (see categorizeWords),
+    // instead of never being asked again just because it was once answered
+    // right twice in a row.
+    srsDefaultEase: 2.3,
+    srsMinEase: 1.3,
+    srsMaxEase: 3.2,
+    srsEaseGrowOnCorrect: 0.05,
+    srsEaseShrinkOnIncorrect: 0.2,
+    // The first two successful reviews use fixed intervals (spacing
+    // research consistently finds a short initial gap - "did it survive
+    // even one day" - is more informative than compounding ease from an
+    // interval of 0); every graduation after that multiplies the previous
+    // interval by the current ease factor, the standard SM-2 shape.
+    srsFirstIntervalDays: 1,
+    srsSecondIntervalDays: 3,
+    // Interval growth is capped so a long-mastered word still resurfaces at
+    // least this often, rather than a large ease factor pushing it out to
+    // the point it's effectively never reviewed again.
+    srsMaxIntervalDays: 120,
 
     // ---- Level balancing (auto mode) ----
     // When a round spans more than one curriculum level, a level whose
@@ -260,10 +303,20 @@
       word: word,
       level: level != null ? level : null,
       length: length != null ? length : (word ? word.length : 0),
+      // Part of speech (data/vocab.json's own v./n./adj./... field), set on
+      // first recordAttempt - lets computeDifficultyBaseline group objective
+      // difficulty by it, same as level/doubled-letter.
+      pos: null,
       attempts: 0,
       correct: 0,
       incorrect: 0,
       correctStreak: 0,
+      // ---- Spaced-repetition scheduling (see CONFIG's own comment and
+      // recordAttempt) - dueAt 0 means "due now", same as a brand new word,
+      // which is exactly right: nothing to schedule yet. ----
+      easeFactor: CONFIG.srsDefaultEase,
+      intervalDays: 0,
+      dueAt: 0,
       avgCorrectResponseMs: null,
       recentResponseMs: null,
       lastWrongAnswer: null, // most recent incorrect answer the user typed
@@ -391,7 +444,30 @@
     if (!history.firstSeen) history.firstSeen = timestamp;
     if (opts.level != null) history.level = opts.level;
     if (opts.length != null) history.length = opts.length;
+    if (opts.pos != null) history.pos = opts.pos;
     history.recentResponseMs = responseMs;
+
+    // ---- Spaced-repetition interval/ease update (simplified SM-2 - see
+    // CONFIG's own "Spaced-repetition scheduling" comment) - this is what
+    // lets a Memorized word re-enter selection on a schedule instead of
+    // being retired forever the moment its streak first crosses the
+    // threshold (see classifyState/categorizeWords/isDueForReview). ----
+    if (!history.easeFactor) history.easeFactor = CONFIG.srsDefaultEase;
+    if (correct) {
+      history.easeFactor = Math.min(CONFIG.srsMaxEase, history.easeFactor + CONFIG.srsEaseGrowOnCorrect);
+      if (!history.intervalDays) {
+        history.intervalDays = CONFIG.srsFirstIntervalDays;
+      } else if (history.intervalDays < CONFIG.srsSecondIntervalDays) {
+        history.intervalDays = CONFIG.srsSecondIntervalDays;
+      } else {
+        history.intervalDays = Math.min(CONFIG.srsMaxIntervalDays, Math.round(history.intervalDays * history.easeFactor));
+      }
+      history.dueAt = timestamp + history.intervalDays * ONE_DAY_MS;
+    } else {
+      history.easeFactor = Math.max(CONFIG.srsMinEase, history.easeFactor - CONFIG.srsEaseShrinkOnIncorrect);
+      history.intervalDays = 0;
+      history.dueAt = timestamp; // due again immediately - already selectable as "incorrect" anyway
+    }
 
     if (correct && responseMs != null) {
       history.avgCorrectResponseMs =
@@ -451,6 +527,18 @@
     if (!h.attempts) return "new";
     if (h.lastResult === "incorrect") return "incorrect";
     return (h.correctStreak || 0) >= CONFIG.memorizedStreak ? "memorized" : "learning";
+  }
+
+  // Whether a word currently classified "memorized" (see classifyState
+  // above) has reached its scheduled review point (see recordAttempt's
+  // SM-2-style interval/ease update) and should re-enter the selectable
+  // pool instead of staying retired - see categorizeWords, the only caller.
+  // A word that has never been through the scheduler (dueAt still 0/unset -
+  // e.g. progress data synced from before this existed) is treated as
+  // already due rather than silently exempt from review forever.
+  function isDueForReview(history, now) {
+    const h = history || {};
+    return (h.dueAt || 0) <= (typeof now === "number" ? now : Date.now());
   }
 
   // Most recent distinct wrong answers for a word, newest first - lets the
@@ -787,6 +875,7 @@
     const signals = aiSignals || {};
     const lengthPoints = [];
     const byLevel = {};
+    const byPos = {};
     const byDoubled = { yes: [], no: [] };
 
     for (const key of Object.keys(store)) {
@@ -796,6 +885,9 @@
       if (typeof h.length === "number" && h.length > 0) lengthPoints.push({ x: h.length, y: errorRate });
       if (h.level != null) {
         (byLevel[h.level] = byLevel[h.level] || []).push(errorRate);
+      }
+      if (h.pos) {
+        (byPos[h.pos] = byPos[h.pos] || []).push(errorRate);
       }
       if (h.word) (hasDoubledLetter(h.word) ? byDoubled.yes : byDoubled.no).push(errorRate);
     }
@@ -830,16 +922,32 @@
       levelDeviation[level] = shrunkDeviation(average(rates), rates.length, overallAvg, CONFIG.difficultyShrinkageK);
     }
 
+    // Same shrinkage as level above (a nominal group, no binary-comparison
+    // minimum needed the way doubled-letter's yes/no split does) - grouped
+    // by data/vocab.json's own `pos` field (v./n./adj./...), which the
+    // difficulty model didn't use at all before even though it's been
+    // loaded and displayed this whole time.
+    const posDeviation = {};
+    for (const pos of Object.keys(byPos)) {
+      const rates = byPos[pos];
+      posDeviation[pos] = shrunkDeviation(average(rates), rates.length, overallAvg, CONFIG.difficultyShrinkageK);
+    }
+
     let doubledDeviation = 0;
     if (byDoubled.yes.length >= CONFIG.minSamplesForDoubledLetterEffect && byDoubled.no.length >= CONFIG.minSamplesForDoubledLetterEffect) {
       doubledDeviation = shrunkDeviation(average(byDoubled.yes), byDoubled.yes.length, overallAvg, CONFIG.difficultyShrinkageK);
     }
 
     return {
-      predict: (word, level) => {
+      // `pos` is optional (appended, not inserted, to stay backward
+      // compatible with any existing caller that only ever passed
+      // word/level) - omitted or unrecognized, it's simply a no-op, same as
+      // an unrecognized level.
+      predict: (word, level, pos) => {
         const w = word || "";
         let risk = lengthPredict(w.length);
         if (level != null && levelDeviation[level] != null) risk += levelDeviation[level];
+        if (pos != null && posDeviation[pos] != null) risk += posDeviation[pos];
         if (doubledDeviation && hasDoubledLetter(w)) risk += doubledDeviation;
         risk = clamp(risk, 0, 1);
 
@@ -927,21 +1035,52 @@
     };
   }
 
+  // A word's own empirical error rate, weighting more RECENT attempts more
+  // heavily than older ones (see CONFIG.difficultyRecencyDecay) instead of
+  // one flat lifetime correct/incorrect ratio - a word the learner used to
+  // miss but has gotten right the last several times in a row should read
+  // as low risk NOW, and the reverse for a word that used to be easy but
+  // has recently started slipping. Limited to whatever's still in
+  // history.recentAttempts (see CONFIG.maxRecentAttempts) - older attempts
+  // that already fell out of that ring buffer are simply gone rather than
+  // down-weighted to near-zero, which is a fine approximation since the
+  // decay would have made them negligible anyway. Returns null with no
+  // attempts to weight at all (a brand new word), letting the caller fall
+  // back to the flat lifetime ratio.
+  function computeOwnRecencyWeightedErrorRate(history) {
+    const attempts = (history && history.recentAttempts) || [];
+    if (!attempts.length) return null;
+    let weightedWrong = 0;
+    let totalWeight = 0;
+    let weight = 1;
+    for (let i = attempts.length - 1; i >= 0; i--) {
+      totalWeight += weight;
+      if (!attempts[i].correct) weightedWrong += weight;
+      weight *= CONFIG.difficultyRecencyDecay;
+    }
+    return totalWeight > 0 ? weightedWrong / totalWeight : null;
+  }
+
   // One 0..1-ish predicted difficulty for a word, whether it's never been
   // attempted or has a full history: starts from the objective baseline
   // (or a neutral 0.15 with no baseline data at all yet), then - if this
   // word itself has been attempted - blends in its own empirical error
-  // rate via the same empirical-Bayes shrinkage idea used inside the
-  // baseline's own group effects (CONFIG.difficultyOwnDataShrinkageK): a
-  // word tried once and missed shouldn't swing straight to "certain risk",
-  // but as real attempts accumulate on THIS word, its own track record
-  // increasingly dominates the generic prediction. That blended objective
-  // risk is then combined with the interference signal, same as before
-  // (see CONFIG.difficultyBaselineWeight/difficultyInterferenceWeight).
-  function predictWordDifficulty(word, level, history, baseline, interferenceModel) {
-    let objRisk = baseline ? baseline.predict(word, level) : 0.15;
+  // rate (recency-weighted - see computeOwnRecencyWeightedErrorRate above,
+  // falling back to the flat lifetime ratio for a bare {attempts,incorrect}
+  // history with no recentAttempts ring buffer) via the same
+  // empirical-Bayes shrinkage idea used inside the baseline's own group
+  // effects (CONFIG.difficultyOwnDataShrinkageK): a word tried once and
+  // missed shouldn't swing straight to "certain risk", but as real attempts
+  // accumulate on THIS word, its own track record increasingly dominates
+  // the generic prediction. That blended objective risk is then combined
+  // with the interference signal, same as before (see
+  // CONFIG.difficultyBaselineWeight/difficultyInterferenceWeight). `pos` is
+  // optional and only ever forwarded to the baseline (see its own comment).
+  function predictWordDifficulty(word, level, history, baseline, interferenceModel, pos) {
+    let objRisk = baseline ? baseline.predict(word, level, pos) : 0.15;
     if (history && history.attempts) {
-      const ownErrorRate = clamp((history.incorrect || 0) / history.attempts, 0, 1);
+      const recencyWeighted = computeOwnRecencyWeightedErrorRate(history);
+      const ownErrorRate = clamp(recencyWeighted != null ? recencyWeighted : (history.incorrect || 0) / history.attempts, 0, 1);
       const trust = history.attempts / (history.attempts + CONFIG.difficultyOwnDataShrinkageK);
       objRisk = ownErrorRate * trust + objRisk * (1 - trust);
     }
@@ -1004,7 +1143,7 @@
   // every level with candidates gets a fair share of any given prefix
   // regardless of how this weight alone would have ranked them.
   function computeSelectionWeight(w, history, models, now, category) {
-    const risk = predictWordDifficulty(w.word, w.level, history, models.difficultyBaseline, models.interferenceModel);
+    const risk = predictWordDifficulty(w.word, w.level, history, models.difficultyBaseline, models.interferenceModel, w.pos);
     const effectiveRisk = category === "incorrect" || category === "learning" ? 1 - risk : risk;
     let weight = 0.5 + effectiveRisk * 2;
 
@@ -1055,7 +1194,12 @@
 
   /* ---------- Word categorization ---------- */
 
-  function categorizeWords(pool, historyStore) {
+  // `now` (optional, defaults to Date.now()) only affects the
+  // memorized/due-for-review split below - passed through by selectQuestions
+  // (which already has its own `now`) and available to any other caller
+  // that wants a specific moment (e.g. tests).
+  function categorizeWords(pool, historyStore, now) {
+    const at = typeof now === "number" ? now : Date.now();
     const unseen = [];
     const incorrect = [];
     const learning = [];
@@ -1065,8 +1209,19 @@
       const state = classifyState(h);
       if (state === "new") unseen.push(w);
       else if (state === "incorrect") incorrect.push(w);
-      else if (state === "memorized") memorized.push(w);
-      else learning.push(w);
+      else if (state === "memorized") {
+        // A Memorized word whose spaced-repetition interval has elapsed
+        // (see recordAttempt's SM-2-style scheduling / isDueForReview)
+        // quietly re-enters the "learning" bucket instead of staying
+        // retired forever - real retention needs a periodic check-in, not
+        // a one-time streak. classifyState and the word's displayed
+        // "Memorized" label/count (see computeProgressSummary, which uses
+        // classifyState directly, not this function) are unaffected either
+        // way - this only changes what's eligible for SELECTION and what
+        // shows up in 複習's 學習中 list (see app.js's wordsInCategory).
+        if (isDueForReview(h, at)) learning.push(w);
+        else memorized.push(w);
+      } else learning.push(w);
     }
     return { unseen: unseen, incorrect: incorrect, learning: learning, memorized: memorized };
   }
@@ -1283,8 +1438,8 @@
   // in a round - it's just a counting pass over the pool, no randomness -
   // which is what lets auto mode re-derive its ratio live as words move
   // between categories mid-round.
-  function computeAutoBalanceRatioForPool(pool, historyStore) {
-    const cats = categorizeWords(pool, historyStore);
+  function computeAutoBalanceRatioForPool(pool, historyStore, now) {
+    const cats = categorizeWords(pool, historyStore, now);
     return computeAutoBalanceRatio({
       new: cats.unseen.length,
       incorrect: cats.incorrect.length,
@@ -1335,7 +1490,7 @@
     size = Math.min(size, totalAvailable);
     if (size <= 0) return [];
 
-    const { unseen, incorrect, learning } = categorizeWords(pool, historyStore);
+    const { unseen, incorrect, learning } = categorizeWords(pool, historyStore, now);
     const models = buildPriorityModels(historyStore, o.aiSignals);
     // Level balancing (see computeLevelBalanceModel/CONFIG's own comment)
     // only makes sense to apply when the caller opts in (auto mode - see
@@ -1456,6 +1611,7 @@
     setMarked: setMarked,
     isMarked: isMarked,
     classifyState: classifyState,
+    isDueForReview: isDueForReview,
     recentWrongAnswersOf: recentWrongAnswersOf,
     diffChars: diffChars,
     diffCharsBoth: diffCharsBoth,
@@ -1467,6 +1623,7 @@
     hasDoubledLetter: hasDoubledLetter,
     computeDifficultyBaseline: computeDifficultyBaseline,
     computeInterferenceModel: computeInterferenceModel,
+    computeOwnRecencyWeightedErrorRate: computeOwnRecencyWeightedErrorRate,
     predictWordDifficulty: predictWordDifficulty,
     buildPriorityModels: buildPriorityModels,
     computeSelectionWeight: computeSelectionWeight,

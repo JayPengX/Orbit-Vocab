@@ -137,6 +137,76 @@ test("a long, slowly-typed word and a short, quickly-typed word both reach Memor
   assert.equal(L.classifyState(longWord), "memorized");
 });
 
+/* ================= Spaced-repetition scheduling (recordAttempt's SM-2-style
+   ease/interval/dueAt, isDueForReview, and categorizeWords re-surfacing a
+   due Memorized word) ================= */
+
+test("recordAttempt schedules increasing intervals on consecutive correct answers, and ease grows with them", () => {
+  const h = L.createEmptyWordHistory("schedule", 4, 8);
+  const startEase = h.easeFactor;
+
+  L.recordAttempt(h, { correct: true, timestamp: 1000, level: 4, length: 8 });
+  assert.equal(h.intervalDays, 1, "first success uses the fixed first interval");
+  assert.equal(h.dueAt, 1000 + 1 * 24 * 60 * 60 * 1000);
+  assert.ok(h.easeFactor > startEase, "ease should grow slightly on a correct answer");
+
+  L.recordAttempt(h, { correct: true, timestamp: 2000, level: 4, length: 8 });
+  assert.equal(h.intervalDays, 3, "second success jumps to the fixed second interval");
+
+  const easeAfterTwo = h.easeFactor;
+  L.recordAttempt(h, { correct: true, timestamp: 3000, level: 4, length: 8 });
+  assert.equal(h.intervalDays, Math.round(3 * easeAfterTwo), "third+ success multiplies the previous interval by ease (SM-2 shape)");
+});
+
+test("recordAttempt collapses the interval back to due-now and shrinks ease on an incorrect answer", () => {
+  const h = L.createEmptyWordHistory("collapse", 4, 8);
+  play(h, [{ correct: true }, { correct: true }, { correct: true }]); // build up a real interval first
+  assert.ok(h.intervalDays > 1);
+  const easeBeforeMiss = h.easeFactor;
+
+  L.recordAttempt(h, { correct: false, timestamp: 9000, level: 4, length: 8 });
+  assert.equal(h.intervalDays, 0);
+  assert.equal(h.dueAt, 9000, "due again immediately after a miss");
+  assert.ok(h.easeFactor < easeBeforeMiss, "ease should shrink on an incorrect answer");
+});
+
+test("recordAttempt's ease factor is clamped within [srsMinEase, srsMaxEase] across many attempts", () => {
+  const easy = L.createEmptyWordHistory("easy", 4, 4);
+  for (let i = 0; i < 50; i++) L.recordAttempt(easy, { correct: true, timestamp: 1000 + i * 1000, level: 4, length: 4 });
+  assert.ok(easy.easeFactor <= L.CONFIG.srsMaxEase);
+
+  const hard = L.createEmptyWordHistory("hard", 4, 4);
+  for (let i = 0; i < 50; i++) L.recordAttempt(hard, { correct: false, timestamp: 1000 + i * 1000, level: 4, length: 4 });
+  assert.ok(hard.easeFactor >= L.CONFIG.srsMinEase);
+});
+
+test("isDueForReview is true once now reaches dueAt, and true by default for a word never scheduled (dueAt still 0)", () => {
+  const h = L.createEmptyWordHistory("brand-new", 4, 9);
+  assert.equal(L.isDueForReview(h, 12345), true, "an unscheduled word (dueAt 0) is treated as already due");
+
+  L.recordAttempt(h, { correct: true, timestamp: 1000, level: 4, length: 9 });
+  assert.equal(L.isDueForReview(h, h.dueAt - 1), false);
+  assert.equal(L.isDueForReview(h, h.dueAt), true);
+  assert.equal(L.isDueForReview(h, h.dueAt + 1), true);
+});
+
+test("categorizeWords keeps a not-yet-due Memorized word out of 'learning' but moves a due one in, without changing its classifyState label", () => {
+  const historyStore = {};
+  const h = L.createEmptyWordHistory("steady", 4, 6);
+  play(h, [{ correct: true }, { correct: true }]); // memorized at t=3000, due at 3000 + 3 days
+  historyStore.steady = h;
+  const pool = [makeWord("steady", 4)];
+
+  const notYetDue = L.categorizeWords(pool, historyStore, 3000 + 1 * 24 * 60 * 60 * 1000);
+  assert.equal(notYetDue.memorized.length, 1);
+  assert.equal(notYetDue.learning.length, 0);
+
+  const due = L.categorizeWords(pool, historyStore, 3000 + 4 * 24 * 60 * 60 * 1000);
+  assert.equal(due.memorized.length, 0);
+  assert.equal(due.learning.length, 1, "a due Memorized word should surface in the learning bucket for selection");
+  assert.equal(L.classifyState(h), "memorized", "the word's own displayed state is untouched either way - only selection eligibility changes");
+});
+
 /* ================= Wrong-answer review data ================= */
 
 test("recentWrongAnswersOf returns distinct past wrong answers, most recent first, capped", () => {
@@ -711,16 +781,31 @@ test("selectQuestions returns at most the pool size when the pool itself is smal
   assert.equal(new Set(selection.map((w) => w.word)).size, 15);
 });
 
-test("selectQuestions excludes Memorized words entirely - they've graduated out of the rotation", () => {
+test("selectQuestions excludes a Memorized word that hasn't reached its spaced-repetition due date yet", () => {
   const historyStore = {};
   const memorizedWord = makeWord("done", 4);
   const h = L.createEmptyWordHistory("done", 4, 4);
-  play(h, [{ correct: true }, { correct: true }]);
+  play(h, [{ correct: true }, { correct: true }]); // last attempt at t=3000, schedules a 3-day interval - see recordAttempt
   historyStore.done = h;
 
   const pool = [memorizedWord];
-  const selection = L.selectQuestions({ pool, historyStore, size: 80, random: seededRandom(5) });
-  assert.equal(selection.length, 0, "the only word in the pool is Memorized, so there is nothing left to select");
+  const oneDayLater = 3000 + 1 * 24 * 60 * 60 * 1000; // well inside the 3-day interval
+  const selection = L.selectQuestions({ pool, historyStore, size: 80, random: seededRandom(5), now: oneDayLater });
+  assert.equal(selection.length, 0, "the only word in the pool is Memorized and not yet due, so there is nothing left to select");
+});
+
+test("selectQuestions re-includes a Memorized word once its spaced-repetition interval has elapsed (due for review) - a real forgetting curve, not permanent graduation", () => {
+  const historyStore = {};
+  const memorizedWord = makeWord("done", 4);
+  const h = L.createEmptyWordHistory("done", 4, 4);
+  play(h, [{ correct: true }, { correct: true }]); // last attempt at t=3000, schedules a 3-day interval - see recordAttempt
+  historyStore.done = h;
+
+  const pool = [memorizedWord];
+  const fourDaysLater = 3000 + 4 * 24 * 60 * 60 * 1000; // past the 3-day interval
+  const selection = L.selectQuestions({ pool, historyStore, size: 80, random: seededRandom(5), now: fourDaysLater });
+  assert.equal(selection.length, 1, "a Memorized word past its due date should re-enter the selectable pool");
+  assert.equal(selection[0].word, "done");
 });
 
 test("selectQuestions returns an empty list (not an error) when every ratio slider is 0%", () => {
@@ -1098,6 +1183,28 @@ test("computeDifficultyBaseline predicts a higher error rate for words with a do
   assert.ok(baseline.predict("committee", 4) > baseline.predict("elephant", 4));
 });
 
+test("computeDifficultyBaseline predicts a higher error rate for a part of speech this user actually struggles with more, and is a no-op when pos is omitted or unrecognized", () => {
+  const historyStore = {};
+  for (let i = 0; i < 6; i++) {
+    const w = `verb${i}`;
+    const h = L.createEmptyWordHistory(w, 4, 6);
+    h.attempts = 1; h.correct = 0; h.incorrect = 1; h.pos = "v.";
+    historyStore[w] = h;
+  }
+  for (let i = 0; i < 6; i++) {
+    const w = `noun${i}`;
+    const h = L.createEmptyWordHistory(w, 4, 6);
+    h.attempts = 1; h.correct = 1; h.incorrect = 0; h.pos = "n.";
+    historyStore[w] = h;
+  }
+  const baseline = L.computeDifficultyBaseline(historyStore);
+  assert.ok(baseline.predict("newverb", 4, "v.") > baseline.predict("newnoun", 4, "n."), "a pos this user consistently misses should predict higher risk than one they consistently get right");
+  // Omitted/unrecognized pos should fall back to the same risk as no pos effect at all - never throw, never apply a bogus deviation.
+  const noPos = baseline.predict("newword", 4);
+  const unknownPos = baseline.predict("newword", 4, "interjection");
+  assert.equal(noPos, unknownPos);
+});
+
 test("computeInterferenceModel is null below the minimum struggling-word count", () => {
   const historyStore = {};
   for (const w of ["light", "might"]) { // only 2, below minStruggleWordsForInterference (3)
@@ -1140,6 +1247,44 @@ test("predictWordDifficulty leans toward a word's OWN empirical error rate as re
   const risk20 = L.predictWordDifficulty("word", 4, { attempts: 20, incorrect: 20 }, baseline, null);
   assert.ok(risk20 > risk1, "20 confirmed wrong attempts should move the estimate further than just 1");
   assert.ok(risk20 > baseline.predict(), "with plenty of its own (bad) data, the word's own record should dominate the generic 0.1 baseline");
+});
+
+test("computeOwnRecencyWeightedErrorRate weighs recent attempts more heavily than old ones, in both directions", () => {
+  assert.equal(L.computeOwnRecencyWeightedErrorRate(null), null);
+  assert.equal(L.computeOwnRecencyWeightedErrorRate({ recentAttempts: [] }), null);
+
+  // Used to struggle, now consistently correct - recency-weighted rate
+  // should read as LOW despite an even 50/50 lifetime split.
+  const improving = { recentAttempts: [
+    { correct: false }, { correct: false }, { correct: false }, { correct: false },
+    { correct: true }, { correct: true }, { correct: true }, { correct: true },
+  ] };
+  const improvingRate = L.computeOwnRecencyWeightedErrorRate(improving);
+  assert.ok(improvingRate < 0.5, `recently-improved word should read as lower risk than a flat 50% lifetime rate (got ${improvingRate})`);
+
+  // Used to be easy, now consistently wrong - the reverse should hold.
+  const slipping = { recentAttempts: [
+    { correct: true }, { correct: true }, { correct: true }, { correct: true },
+    { correct: false }, { correct: false }, { correct: false }, { correct: false },
+  ] };
+  const slippingRate = L.computeOwnRecencyWeightedErrorRate(slipping);
+  assert.ok(slippingRate > 0.5, `recently-slipping word should read as higher risk than a flat 50% lifetime rate (got ${slippingRate})`);
+});
+
+test("predictWordDifficulty uses the recency-weighted rate (not the flat lifetime ratio) once a history has a recentAttempts ring buffer", () => {
+  const baseline = { predict: () => 0.1 };
+  // Same lifetime 50/50 split either way - only the ORDER of recent attempts differs.
+  const stillStruggling = {
+    attempts: 8, incorrect: 4,
+    recentAttempts: [{ correct: true }, { correct: true }, { correct: true }, { correct: true }, { correct: false }, { correct: false }, { correct: false }, { correct: false }],
+  };
+  const recovered = {
+    attempts: 8, incorrect: 4,
+    recentAttempts: [{ correct: false }, { correct: false }, { correct: false }, { correct: false }, { correct: true }, { correct: true }, { correct: true }, { correct: true }],
+  };
+  const riskStillStruggling = L.predictWordDifficulty("word", 4, stillStruggling, baseline, null);
+  const riskRecovered = L.predictWordDifficulty("word", 4, recovered, baseline, null);
+  assert.ok(riskStillStruggling > riskRecovered, "identical lifetime ratios should still diverge once recency is taken into account");
 });
 
 test("the unified priority pipeline (buildPriorityModels + computeSelectionWeight) falls back to an effectively uniform shuffle (still a full, non-duplicated permutation) with no data at all", () => {
