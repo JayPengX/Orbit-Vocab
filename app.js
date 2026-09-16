@@ -2176,6 +2176,9 @@ document.getElementById("flashcard-mark-btn").addEventListener("click", () => {
   // current batch/browsing position here.
   updateReviewListCounts();
 });
+document.getElementById("flashcard-play-btn").addEventListener("click", () => {
+  speak(document.getElementById("flashcard-play-btn").dataset.word);
+});
 
 // Drag-to-swipe + tap-to-flip on the flashcard itself, via Pointer Events
 // (covers touch, mouse, and pen in one set of listeners - no separate
