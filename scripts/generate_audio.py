@@ -137,11 +137,18 @@ HETERONYM_OVERRIDES = {
     "bass": "His voice has a deep bass tone.",
 }
 
-# Padding added around the target word's own [offset, offset+duration] span
-# (from WordBoundary metadata) before slicing, and fade lengths applied to
-# the cut edges - a hard cut exactly on the boundary clips the very
-# start/end of the word's own sound and can leave an audible click; a
-# little of the surrounding silence plus a short fade avoids both.
+# Maximum padding added around the target word's own [offset, offset+duration]
+# span (from WordBoundary metadata) before slicing, and fade lengths applied
+# to the cut edges - a hard cut exactly on the boundary clips the very
+# start/end of the word's own sound and can leave an audible click; a little
+# of the surrounding silence plus a short fade avoids both. This is a CAP,
+# not a fixed amount - see synthesize_heteronym's own comment on why it gets
+# clamped per-word against the neighboring words' own reported boundaries
+# (a carrier sentence's target word is usually preceded/followed directly by
+# an unstressed function word - "the", "I will", "...one" - with little or no
+# real silence gap between them in fluent speech, so blindly applying the
+# full cap could reach backward/forward into the NEIGHBOR's own sound
+# instead of just padding silence, corrupting the very word being isolated).
 SLICE_PAD_MS = 40
 FADE_IN_MS = 15
 FADE_OUT_MS = 25
@@ -172,26 +179,53 @@ def _edge_tts_kwargs():
 async def synthesize_heteronym(word, sentence, voice):
     """Renders `sentence`, locates `word`'s own span via WordBoundary
     timing metadata, and returns just that slice as MP3 bytes (pydub/
-    ffmpeg) - see HETERONYM_OVERRIDES's own comment for why this exists."""
+    ffmpeg) - see HETERONYM_OVERRIDES's own comment for why this exists.
+
+    Regression note: an earlier version padded a flat SLICE_PAD_MS on both
+    sides of the target word's own reported span with no regard for where
+    the NEIGHBORING words actually are. In fluent speech a function word
+    right before/after the target (these carrier sentences are built
+    entirely of them - "the", "I will", "...one") often has little to no
+    real silence gap before it, so a flat pad routinely reached backward/
+    forward far enough to catch the tail or head of that OTHER word's own
+    sound - the target word's clip came out with an audible fragment of a
+    different word stitched onto it. Fixed by capping the padding on each
+    side to at most half the actual gap to that neighbor's own reported
+    boundary (0 if the words are back-to-back with no gap at all) - the
+    padding can now only ever eat into real silence, never into another
+    word's own reported span, whatever SLICE_PAD_MS is set to.
+    """
     from pydub import AudioSegment  # local import: only needed on this path
 
     communicate = edge_tts.Communicate(sentence, voice, boundary="WordBoundary", **_edge_tts_kwargs())
     audio_bytes = bytearray()
-    target_boundary = None
+    boundaries = []
+    target_index = None
     async for chunk in communicate.stream():
         if chunk["type"] == "audio":
             audio_bytes.extend(chunk["data"])
-        elif chunk["type"] == "WordBoundary" and chunk["text"].lower() == word.lower():
-            target_boundary = chunk  # last match wins if the word repeats
-    if target_boundary is None:
+        elif chunk["type"] == "WordBoundary":
+            boundaries.append(chunk)
+            if chunk["text"].lower() == word.lower():
+                target_index = len(boundaries) - 1  # last match wins if the word repeats
+    if target_index is None:
         raise RuntimeError(f"word boundary for {word!r} not found in synthesized sentence {sentence!r}")
 
-    # WordBoundary offsets/durations are in 100-nanosecond ticks.
-    start_ms = target_boundary["offset"] / 10_000
-    end_ms = (target_boundary["offset"] + target_boundary["duration"]) / 10_000
     full = AudioSegment.from_mp3(io.BytesIO(bytes(audio_bytes)))
-    clip = full[max(0, start_ms - SLICE_PAD_MS) : min(len(full), end_ms + SLICE_PAD_MS)]
-    clip = clip.fade_in(FADE_IN_MS).fade_out(FADE_OUT_MS)
+    target = boundaries[target_index]
+    # WordBoundary offsets/durations are in 100-nanosecond ticks.
+    target_start = target["offset"]
+    target_end = target["offset"] + target["duration"]
+    prev_end = boundaries[target_index - 1]["offset"] + boundaries[target_index - 1]["duration"] if target_index > 0 else 0
+    next_start = boundaries[target_index + 1]["offset"] if target_index + 1 < len(boundaries) else len(full) * 10_000
+
+    pad_before_ticks = max(0, min(SLICE_PAD_MS * 10_000, (target_start - prev_end) // 2))
+    pad_after_ticks = max(0, min(SLICE_PAD_MS * 10_000, (next_start - target_end) // 2))
+
+    start_ms = (target_start - pad_before_ticks) / 10_000
+    end_ms = (target_end + pad_after_ticks) / 10_000
+    clip = full[max(0, start_ms) : min(len(full), end_ms)]
+    clip = clip.fade_in(min(FADE_IN_MS, len(clip) // 4)).fade_out(min(FADE_OUT_MS, len(clip) // 4))
     buf = io.BytesIO()
     clip.export(buf, format="mp3", bitrate="64k")
     return buf.getvalue()
