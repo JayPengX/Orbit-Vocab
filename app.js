@@ -1828,13 +1828,29 @@ function renderReviewListListView(items) {
   pagerContainer.innerHTML = buildPagerHtml("reviewlist", reviewListPage, totalPages, items.length);
 }
 
-// The correct word's zh meaning, plus (for 答錯待複習 only, via the same
-// diff already used elsewhere - see renderWrongAnswerCell) what was
-// actually typed wrong last time - both revealed together the moment a
-// flashcard is flipped.
+// Same two-sided diff the quiz's own wrong-answer feedback uses (see
+// renderAnswerFeedback/Logic.diffCharsBoth) - what was actually typed, with
+// the specific letters that threw the spelling off highlighted, next to the
+// correct spelling with the missed letters highlighted. Flashcard mode has
+// the room for both lines (unlike the compact single-line
+// renderWrongAnswerCell used by the dense Progress table/複習 list cards),
+// and showing exactly WHERE the mistake was is more useful for review than
+// just the correct spelling with misses marked.
+function buildDetailedWrongAnswerHtml(detail) {
+  const diffOps = Logic.diffCharsBoth(detail.lastWrongAnswer, detail.word);
+  const title = detail.recentWrongAnswers.length ? `最近幾次打錯：${detail.recentWrongAnswers.join("、")}` : "";
+  return `<span title="${escapeHtml(title)}">
+    <div>你打的：${diffOpsToHtml(diffOps.typed, "diff-extra")}</div>
+    <div>正確答案：${diffOpsToHtml(diffOps.correct, "diff-miss")}</div>
+  </span>`;
+}
+
+// The correct word's zh meaning, plus (for 答錯待複習 only, via
+// buildDetailedWrongAnswerHtml) what was actually typed wrong last time -
+// both revealed together the moment a flashcard is flipped.
 function buildFlashcardRevealHtml(detail, showWrongInfo) {
   const zhHtml = zhLines(detail.zh).map((l) => escapeHtml(l)).join("<br>");
-  const wrongHtml = showWrongInfo && detail.lastWrongAnswer ? `<div class="word-card-wrong">${renderWrongAnswerCell(detail)}</div>` : "";
+  const wrongHtml = showWrongInfo && detail.lastWrongAnswer ? `<div class="word-card-wrong answer-diff">${buildDetailedWrongAnswerHtml(detail)}</div>` : "";
   return `<div>${zhHtml}</div>${wrongHtml}`;
 }
 
