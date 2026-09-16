@@ -1747,17 +1747,22 @@ function wordsInCategory(category) {
   return category === "incorrect" ? cats.incorrect : cats.learning;
 }
 
-// A flashcard-mode deck: `amount` words from `category`, least-recently-
-// reviewed first (see Logic.selectReviewBatch) - deliberately NOT the list
-// view's own sort. With a large backlog (hundreds of incorrect/learning
-// words), a deck that always surfaces whatever's gone longest untouched
-// means a big backlog naturally spreads itself across as many sessions as
-// it takes, with no manual bookkeeping, and (since lastReviewedAt lives in
-// the synced progress data) the same rotation continues on any synced
-// device too.
+// A flashcard-mode deck: `amount` words from `category`, ranked by the same
+// difficulty-prediction model the real quiz uses to pick its own
+// new/incorrect/learning questions (Logic.rankCandidates /
+// buildPriorityModels - see selectQuestions/rebalanceAutoModeTail for the
+// quiz's own use of the same pair) - deliberately NOT the list view's own
+// sort. This is what makes a flashcard session preview the words an actual
+// quiz round would currently be most likely to ask about, instead of just
+// whatever's gone longest untouched. rankCandidates still falls back to
+// on-cooldown words (see splitByCooldown) only once the rest of the
+// category's candidates are used up, so a large backlog still naturally
+// spreads itself across sessions - it just orders each session's own pick
+// by predicted risk first, same as the quiz.
 function buildFlashcardDeck(category, amount) {
-  const batch = Logic.selectReviewBatch(wordsInCategory(category), progressStore, amount, Math.random);
-  return wordsToReviewItems(batch);
+  const models = Logic.buildPriorityModels(progressStore, AI_SIGNALS);
+  const ranked = Logic.rankCandidates(wordsInCategory(category), progressStore, Math.random, Date.now(), models, category);
+  return wordsToReviewItems(ranked.slice(0, amount));
 }
 
 function reviewListEmptyText() {

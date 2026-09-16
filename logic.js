@@ -2137,6 +2137,7 @@
     categorizeWords: categorizeWords,
     filterMarked: filterMarked,
     selectReviewBatch: selectReviewBatch,
+    rankCandidates: rankCandidates,
     computeQuestionTargets: computeQuestionTargets,
     scoreMemorizedForReintroduction: scoreMemorizedForReintroduction,
     rankEligibleForReintroduction: rankEligibleForReintroduction,
