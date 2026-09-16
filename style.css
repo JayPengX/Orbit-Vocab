@@ -874,6 +874,15 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
   font-size: 2rem;
   font-weight: 700;
   letter-spacing: 0.5px;
+  /* An explicit value here (rather than the browser's own "normal") is what
+     lets app.js's fitFlashcardWordText measure a reliable single-line
+     height via getComputedStyle - see that function's own comment. */
+  line-height: 1.15;
+  /* Only a last-resort fallback now: fitFlashcardWordText shrinks the
+     font-size first so a long word (no spaces to wrap on, like
+     "telecommunications") fits on one line instead of getting an ugly
+     mid-word split here - this only still fires if even its floor size
+     doesn't fit. */
   word-break: break-word;
 }
 

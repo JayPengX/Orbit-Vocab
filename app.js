@@ -1854,6 +1854,29 @@ function buildFlashcardRevealHtml(detail, showWrongInfo) {
   return `<div>${zhHtml}</div>${wrongHtml}`;
 }
 
+// A long English word (e.g. "telecommunications", 18 letters) has no
+// spaces to naturally wrap on, so at the card's normal font-size it was
+// hitting .flashcard-word's word-break: break-word fallback and splitting
+// ugly mid-word across two lines. A flat character-count threshold isn't
+// reliable here - "illiterate" and "wonderful" are both 10 letters but
+// render very different widths - so this instead measures the ACTUAL
+// rendered box, shrinking the font-size one step at a time until the
+// element's content fits back within a single line's height (or a floor is
+// hit, below which the word would become hard to read - a two-line wrap is
+// the lesser evil at that point). Always restarts from the CSS-defined max
+// size first, since a previous render may have shrunk a longer word.
+const FLASHCARD_WORD_MIN_FONT_PX = 15;
+function fitFlashcardWordText(el) {
+  el.style.fontSize = "";
+  const maxFontPx = parseFloat(getComputedStyle(el).fontSize);
+  const singleLineHeight = parseFloat(getComputedStyle(el).lineHeight);
+  let fontPx = maxFontPx;
+  while (el.scrollHeight > singleLineHeight + 1 && fontPx > FLASHCARD_WORD_MIN_FONT_PX) {
+    fontPx -= 1;
+    el.style.fontSize = `${fontPx}px`;
+  }
+}
+
 function renderFlashcard() {
   const items = flashcardDeck;
   if (!items.length) return;
@@ -1862,7 +1885,9 @@ function renderFlashcard() {
 
   document.getElementById("flashcard-progress").textContent = `第 ${flashcardIndex + 1} / ${items.length} 張`;
   document.getElementById("flashcard-level").textContent = `Level ${detail.level}`;
-  document.getElementById("flashcard-word").textContent = detail.word;
+  const wordEl = document.getElementById("flashcard-word");
+  wordEl.textContent = detail.word;
+  fitFlashcardWordText(wordEl);
   document.getElementById("flashcard-pos").textContent = detail.pos || "";
   document.getElementById("flashcard-play-btn").dataset.word = detail.word;
   const markBtn = document.getElementById("flashcard-mark-btn");
