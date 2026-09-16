@@ -2005,11 +2005,11 @@ test("migrateWordEntry recalibrates an already-cached but under-seeded mastery v
     word: "recalme", level: 4, length: 7, attempts: 5, correct: 4, incorrect: 1,
     recentAttempts: [{ correct: false }, { correct: true }, { correct: true }],
     lastResult: "correct",
-    masteryAlpha: 2.464125, masteryBeta: 1.336625, // pure ring-buffer replay, no older-evidence credit
+    masteryAlpha: 1.924, masteryBeta: 0.468, // pure ring-buffer replay, no older-evidence credit
   };
   const recalibrated = L.migrateWordEntry(underSeeded, "recalme", 4, 7);
   assert.ok(recalibrated.masteryAlpha > underSeeded.masteryAlpha, "recalibration should raise the under-seeded value");
-  assert.ok(L.masteryMean(recalibrated) > 0.7, `with the older evidence credited, this word's real 4/5 record should read as high-confidence (got ${L.masteryMean(recalibrated)})`);
+  assert.ok(L.masteryMean(recalibrated) > 0.8, `with the older evidence credited, this word's real 4/5 record should read as high-confidence (got ${L.masteryMean(recalibrated)})`);
 
   // A word whose cached value is ALREADY more confident than a coarse
   // reconstruction from just the raw counts would suggest (e.g. real,

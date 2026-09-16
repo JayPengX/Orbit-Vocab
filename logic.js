@@ -39,9 +39,9 @@
     memorizedStreak: 2,
 
     // Decayed Beta-Bernoulli estimate of how likely you are to get a word
-    // right, used ONLY for predicting difficulty/risk (predictWordDifficulty,
-    // and - via that - which Memorized words auto mode reintroduces for
-    // review, see scoreMemorizedForReintroduction) - NOT for the "memorized"
+    // right, used ONLY for predicting difficulty/risk ("learning"/
+    // "reintroduce" ranking in computeSelectionWeight, and the Progress
+    // page's own risk column - see masteryMean) - NOT for the "memorized"
     // label itself (see classifyState, which is purely correctness-count
     // based, no score or confidence ramp). Every attempt updates two
     // running pseudo-counts, masteryAlpha (evidence for "correct") and
@@ -52,17 +52,44 @@
     // one shot - a word that used to be shaky but has been solid recently
     // should read as LOW risk now, and the reverse for one that's recently
     // started slipping.
-    masteryDecay: 0.85,
+    //
+    // Both this and masteryPriorAlpha/masteryPriorBeta below were originally
+    // 0.85/1/1 (a slow decay, neutral 50/50 starting prior) by design intent
+    // alone, never checked against real usage. Backtested (see scripts/
+    // backtest_predictions.js) against one learner's full real progress
+    // export (~3060 words, ~6800 in-window attempts) via prequential
+    // (walk-forward, next-attempt-only) Brier score, 5-fold cross-validated
+    // BY WORD so no attempt from a test-fold word ever leaked into hyperparameter
+    // selection: the shipped 0.85/1/1 scored WORSE than the trivial "always
+    // guess your own average" baseline (0.194 vs 0.187 held-out Brier) - it
+    // was actively hurting, not helping, the learning/reintroduce ranking
+    // and the Progress risk column for that real dataset. The values below
+    // were the best-scoring, cross-validated combination found (0.157
+    // held-out Brier, ~16% better than the trivial baseline, consistent
+    // across all 5 held-out folds) and replace the untested originals.
+    masteryDecay: 0.6,
     // Where masteryAlpha/masteryBeta start before this word has any real
-    // attempts. Deliberately flat/uninformative (50/50) rather than
-    // seeded from the objective difficulty baseline (length/level/POS/
-    // doubled-letter/AI prior - see computeDifficultyBaseline): that
-    // baseline is already blended in separately by predictWordDifficulty,
-    // so duplicating it here would double-count it for a freshly-attempted
-    // word. This prior only needs to get out of the way quickly once real
-    // attempts start arriving, not to be a second cold-start guess.
-    masteryPriorAlpha: 1,
-    masteryPriorBeta: 1,
+    // attempts. Used to be flat/uninformative (50/50) on the reasoning that
+    // the objective difficulty baseline (length/level/POS/doubled-letter/AI
+    // prior - see computeDifficultyBaseline) already covers a cold-start
+    // guess elsewhere, so duplicating it here would double-count it. In
+    // practice this was actively wrong for anyone whose real overall
+    // accuracy isn't close to 50% (see the backtest above: this learner's
+    // real observed rate was ~72%) - a freshly-attempted word started every
+    // risk estimate from "coin flip" instead of "about as hard as this
+    // learner's words generally are", overstating risk on every early
+    // attempt of every word until enough of ITS OWN evidence accumulated to
+    // fight the neutral prior back down. This isn't a duplicate of the
+    // objective baseline (which varies per-word, by length/level/etc.) -
+    // it's a single learner-wide floor for "no per-word evidence yet",
+    // and should track this learner's own real overall accuracy, not an
+    // arbitrary 50%. Kept deliberately WEAK (alpha+beta = 2 pseudo-attempts
+    // total - less evidence than even a single real attempt's decay step
+    // contributes) so it still gets out of the way fast once real
+    // per-word attempts start arriving; only its STARTING POINT changed,
+    // not its influence once data exists.
+    masteryPriorAlpha: 1.5,
+    masteryPriorBeta: 0.5,
 
     // Smoothing factor for the per-word running-average correct response
     // time (avgCorrectResponseMs). Used only for review-priority ranking
