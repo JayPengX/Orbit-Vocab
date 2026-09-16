@@ -1514,6 +1514,18 @@ function finishTest() {
     renderWordChipList(allHolder, presented);
   }
 
+  // "再來一回合" restarts a REGULAR round from the home screen's own
+  // level/mode settings (see test-again-btn's own handler) - a customDeck
+  // round (see startReviewDeckTest) came from 卡片複習模式's own "測驗這些
+  // 單字" button instead, testing one specific flashcard deck, so that
+  // button would silently launch an unrelated round on an unrelated word
+  // pool right after it. Swap it for one that goes back into a fresh
+  // flashcard deck (same category/amount as the launch panel is still
+  // showing) instead, so finishing this kind of round leads back into more
+  // of the same kind of review, not a different mode entirely.
+  document.getElementById("test-again-btn").classList.toggle("hidden", vocabTest.customDeck);
+  document.getElementById("test-again-flashcard-btn").classList.toggle("hidden", !vocabTest.customDeck);
+
   document.getElementById("test-summary").classList.remove("hidden");
   // "每次完成測驗就同步" - see sync.js's syncNow, same immediate trigger
   // the every-20-answers safety net in recordResult uses, just guaranteed
@@ -1524,6 +1536,18 @@ function finishTest() {
 
 document.getElementById("test-again-btn").addEventListener("click", () => {
   document.getElementById("start-test-btn").click();
+});
+document.getElementById("test-again-flashcard-btn").addEventListener("click", () => {
+  // showView("reviewlist") first (rather than clicking flashcard-launch-btn
+  // directly) so its disabled/hint state is freshly recomputed via
+  // renderReviewList/updateFlashcardLaunchHint before deciding whether to
+  // click it - acing every card in this round can graduate enough of them
+  // to Memorized that the category no longer has FLASHCARD_MIN_AMOUNT words
+  // left, in which case landing on the launch panel with an accurate hint
+  // beats a button click that silently does nothing.
+  showView("reviewlist");
+  const launchBtn = document.getElementById("flashcard-launch-btn");
+  if (!launchBtn.disabled) launchBtn.click();
 });
 document.getElementById("test-home-btn").addEventListener("click", () => showView("home"));
 document.getElementById("test-empty-home-btn").addEventListener("click", () => showView("home"));
