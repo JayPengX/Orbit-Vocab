@@ -93,6 +93,33 @@ function saveSettings() {
   if (window.VocabSync) window.VocabSync.notifyLocalChange();
 }
 
+// Forces every already-attempted word's masteryAlpha/masteryBeta to fully
+// match whatever CONFIG.masteryDecay/masteryPriorAlpha/masteryPriorBeta say
+// RIGHT NOW (see logic.js's own MASTERY_MODEL_VERSION/
+// recalibrateAllMasteryFromEvidence comments for why this needs a dedicated
+// pass at all, rather than just waiting for ordinary migration/recordAttempt
+// to catch up gradually) - run once per config change, not on every load, so
+// a normal load never pays to throw away a word's precise, live-updated
+// value in favor of this coarser recompute for no reason. Gated on
+// `settings.masteryModelVersion` (a plain device-local flag, not synced -
+// deliberately: the recompute is a pure function of already-synced
+// attempts/correct/incorrect/recentAttempts, so every device converges to
+// the same result independently the first time IT loads post-update,
+// without needing to agree on whether some OTHER device already did it).
+// Called after every point progressStore gets (re)built from stored/synced/
+// imported data - see this function's call sites.
+function catchUpMasteryModelIfNeeded() {
+  if (settings.masteryModelVersion === Logic.MASTERY_MODEL_VERSION) return;
+  Logic.recalibrateAllMasteryFromEvidence(progressStore);
+  settings.masteryModelVersion = Logic.MASTERY_MODEL_VERSION;
+  // Not saveSettings(): this is a migration catching existing data up to
+  // already-synced config, not a new local edit - same reasoning as
+  // migrateProgressStore's own persistProgress()-not-saveProgress() choice
+  // just below.
+  saveJSON(SETTINGS_KEY, settings);
+  persistProgress();
+}
+
 // Shown the first time a write to localStorage actually fails - see
 // persistProgress/saveSettings. Deliberately persistent (no auto-hide,
 // unlike showUpdateToast below) since the whole point is that a failed
@@ -223,6 +250,7 @@ window.VocabState = {
       saveJSON(SETTINGS_KEY, settings);
       applySettingsToUI();
     }
+    catchUpMasteryModelIfNeeded();
     if (document.getElementById("view-progress").classList.contains("active")) renderProgress();
     if (document.getElementById("view-reviewlist").classList.contains("active")) renderReviewList();
   },
@@ -420,6 +448,7 @@ async function loadVocab() {
   // still calls saveProgress() itself and is still pushed normally.
   progressStore = Logic.migrateProgressStore(progressStore, VOCAB_INDEX);
   persistProgress();
+  catchUpMasteryModelIfNeeded();
 }
 
 // Optional: the generation script may not have run yet (brand-new checkout,
@@ -2562,6 +2591,7 @@ document.getElementById("import-progress-file").addEventListener("change", (e) =
       saveSettings();
       applySettingsToUI();
     }
+    catchUpMasteryModelIfNeeded();
     saveProgress();
     renderProgress();
     showImportStatus(`已匯入 ${wordCount} 個單字的學習紀錄。`, false);

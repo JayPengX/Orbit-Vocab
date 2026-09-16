@@ -763,6 +763,48 @@
     return recalibratedMean > currentMean ? recalibrated : null;
   }
 
+  // Bumped whenever CONFIG.masteryDecay/masteryPriorAlpha/masteryPriorBeta
+  // change in a way that's meant to apply to EVERY already-attempted word
+  // immediately, not just gradually as each word happens to get a fresh
+  // real attempt (recordAttempt only ever applies whatever CONFIG says
+  // RIGHT NOW to that one word's NEXT answer - it has no way to reach back
+  // and re-decide every past word's cached masteryAlpha/masteryBeta under
+  // the new numbers). recalibrateWordMastery above deliberately only
+  // corrects upward (never erases real, more-trustworthy evidence a word
+  // has earned since it was last seeded), so on its own it can leave a
+  // stale, pre-change value sitting there indefinitely for any word where
+  // the new config would actually rate it MORE at-risk, not less - see
+  // recalibrateAllMasteryFromEvidence below, which app.js runs once per
+  // config change (gated by this version number, not on every load) to
+  // force every word to fully catch up, in EITHER direction, right away.
+  const MASTERY_MODEL_VERSION = 2;
+
+  // Unconditionally recomputes masteryAlpha/masteryBeta for every attempted
+  // word in `historyStore`, in place, straight from deriveMasteryFromEvidence
+  // (i.e. whatever CONFIG.masteryDecay/masteryPriorAlpha/masteryPriorBeta say
+  // RIGHT NOW) - unlike recalibrateWordMastery, this moves the estimate in
+  // EITHER direction, on purpose: the point of calling this at all is "make
+  // every existing word match the current model immediately", not merely
+  // "never let a word look falsely under-confident". A word whose real
+  // recent record is shakier than its old cached value suggested (because,
+  // say, a slower decay used to let old, better attempts linger for longer)
+  // gets pulled DOWN here to match - something recalibrateWordMastery would
+  // never do on its own. Safe to call as a one-time catch-up pass (see
+  // MASTERY_MODEL_VERSION and app.js's own call site) rather than every
+  // load: each word's own live recordAttempt updates already apply whatever
+  // CONFIG says at THAT moment perfectly correctly going forward, so
+  // redoing this on every load would only ever throw away that precision
+  // in favor of deriveMasteryFromEvidence's coarser ring-buffer
+  // approximation for no benefit.
+  function recalibrateAllMasteryFromEvidence(historyStore) {
+    const store = historyStore || {};
+    for (const key of Object.keys(store)) {
+      const h = store[key];
+      if (h && h.attempts) applyMastery(h, deriveMasteryFromEvidence(h));
+    }
+    return store;
+  }
+
   // Posterior probability of getting this word right, per computeWordMastery.
   function masteryMean(history) {
     const m = computeWordMastery(history);
@@ -2073,6 +2115,8 @@
     classifyState: classifyState,
     computeWordMastery: computeWordMastery,
     recalibrateWordMastery: recalibrateWordMastery,
+    MASTERY_MODEL_VERSION: MASTERY_MODEL_VERSION,
+    recalibrateAllMasteryFromEvidence: recalibrateAllMasteryFromEvidence,
     applyMastery: applyMastery,
     masteryMean: masteryMean,
     recentWrongAnswersOf: recentWrongAnswersOf,

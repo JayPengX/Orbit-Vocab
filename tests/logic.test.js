@@ -1658,6 +1658,48 @@ test("computeWordMastery/masteryMean (used for risk PREDICTION, not the memorize
   assert.ok(L.masteryMean(staleImport) > 0.85, `a genuinely 14/15 word should read as high-confidence, not just barely above the ring-buffer-only estimate (got ${L.masteryMean(staleImport)})`);
 });
 
+/* ================= recalibrateAllMasteryFromEvidence - the full (both-
+   directions) catch-up pass used when CONFIG.masteryDecay/masteryPriorAlpha/
+   masteryPriorBeta change, as opposed to recalibrateWordMastery's permanent,
+   upward-only safety net ================= */
+
+test("recalibrateAllMasteryFromEvidence moves a cached mastery value DOWN, not just up, unlike recalibrateWordMastery - proving it actually re-syncs to the CURRENT config rather than only ever correcting under-seeding", () => {
+  const h = L.createEmptyWordHistory("shifted", 4, 7);
+  Object.assign(h, {
+    attempts: 3, correct: 3, incorrect: 0, lastResult: "correct",
+    recentAttempts: [{ correct: true }, { correct: true }, { correct: true }],
+    // Cached value far more confident than deriveMasteryFromEvidence would
+    // ever compute from this history under the CURRENT config - simulating
+    // a value seeded under some very different old decay/prior.
+    masteryAlpha: 50, masteryBeta: 0.01,
+  });
+  const beforeMean = L.masteryMean(h);
+
+  // Sanity check recalibrateWordMastery's own contrasting behavior first:
+  // it must refuse to touch this (recomputing from evidence reads as LESS
+  // confident than the inflated cached value, and it only ever moves up).
+  assert.equal(L.recalibrateWordMastery(h), null, "the upward-only safety net must not touch an over-confident cached value");
+
+  const store = { shifted: h };
+  L.recalibrateAllMasteryFromEvidence(store);
+  assert.ok(L.masteryMean(store.shifted) < beforeMean, "the full recompute should pull an over-confident cached value back down to match real evidence");
+});
+
+test("recalibrateAllMasteryFromEvidence leaves never-attempted words alone and only touches entries with real attempts", () => {
+  const store = {
+    fresh: L.createEmptyWordHistory("fresh", 4, 5),
+    seen: Object.assign(L.createEmptyWordHistory("seen", 4, 4), {
+      attempts: 1, correct: 1, incorrect: 0, lastResult: "correct",
+      recentAttempts: [{ correct: true }],
+      masteryAlpha: 1, masteryBeta: 1, // stale/neutral, should move toward the real evidence
+    }),
+  };
+  L.recalibrateAllMasteryFromEvidence(store);
+  assert.equal(store.fresh.masteryAlpha, null, "a never-attempted word must not be seeded by this pass");
+  assert.equal(store.fresh.masteryBeta, null);
+  assert.notEqual(store.seen.masteryAlpha, 1, "an attempted word's stale cached value should be replaced by the fresh recompute");
+});
+
 test("classifyState: a word with a long, strong track record still needs a fresh 2-in-a-row after a single slip, same as any other word with a mistake in its history - no shortcut via the risk-prediction estimate", () => {
   const h = L.createEmptyWordHistory("steady", 4, 6);
   const results = [];
