@@ -852,6 +852,17 @@
       seen.add(ans);
       out.push(ans);
     }
+    // Falls back to the always-present lastWrongAnswer scalar when
+    // recentAttempts has nothing usable - a real gap for any entry whose
+    // wrong-answer history predates recentAttempts being tracked at all
+    // (migrateWordEntry's "already current-ish shape" branch keeps
+    // lastWrongAnswer from a raw stored entry that has no recentAttempts to
+    // backfill from). Without this, such a word's mnemonic button - gated
+    // on this list being non-empty (see app.js's renderMnemonicCell) -
+    // stays hidden even though the word legitimately has a recorded
+    // mistake to personalize against; this is also exactly the kind of
+    // long-overdue word rankCandidates surfaces first in a review deck.
+    if (!out.length && h.lastWrongAnswer) out.push(h.lastWrongAnswer);
     return out;
   }
 

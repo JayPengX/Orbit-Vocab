@@ -286,6 +286,16 @@ test("recentWrongAnswersOf is empty for a word with no wrong answers yet", () =>
   assert.deepEqual(L.recentWrongAnswersOf(h), []);
 });
 
+test("recentWrongAnswersOf falls back to lastWrongAnswer when recentAttempts has nothing usable", () => {
+  // Mirrors a real stored entry that predates recentAttempts being tracked
+  // at all (migrateWordEntry's "already current-ish shape" branch keeps
+  // lastWrongAnswer from raw storage but has no recentAttempts array to
+  // backfill from) - without the fallback, this word's mnemonic button
+  // stays hidden even though it has a genuinely recorded mistake.
+  const h = { lastWrongAnswer: "wierd", recentAttempts: [] };
+  assert.deepEqual(L.recentWrongAnswersOf(h), ["wierd"]);
+});
+
 test("diffChars highlights a one-letter swap between the typed answer and the correct spelling", () => {
   const ops = L.diffChars("wierd", "weird");
   const correctChars = ops.map((o) => o.char).join("");
