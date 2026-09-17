@@ -223,6 +223,24 @@
       <div class="row actions">
         <button type="button" class="btn primary" id="flashcard-launch-btn">🎴 開始卡片複習模式</button>
       </div>
+
+      <!-- AI 記憶故事: uses the same category selection above (❌ 答錯待複習
+           ／📖 學習中), not a separate picker - see app.js's
+           buildStoryWordPicks. Hidden entirely by
+           updateStoryUiAvailability() when vocab-ai.js's PROXY_URL isn't
+           configured (a fork without the Worker deployed), same as how
+           Orbit's own AI features simply disappear rather than showing a
+           dead button. -->
+      <div id="story-panel" class="hidden">
+        <hr />
+        <h3>📖 AI 記憶故事</h3>
+        <p class="hint">從上面選的分類挑幾個單字，讓 AI 編一則把它們串在一起的短故事，幫助記憶。</p>
+        <p class="hint" id="story-hint"></p>
+        <div class="row actions">
+          <button type="button" class="btn secondary" id="story-generate-btn">📖 生成故事</button>
+        </div>
+        <div class="hidden" id="story-result"></div>
+      </div>
     </div>
 
     <!-- LIST VIEW -->
@@ -394,5 +412,6 @@
 <script src="logic.js?v=__BUILD_VERSION__"></script>
 <script src="app.js?v=__BUILD_VERSION__"></script>
 <script src="sync.js?v=__BUILD_VERSION__"></script>
+<script src="vocab-ai.js?v=__BUILD_VERSION__"></script>
 </body>
 </html>

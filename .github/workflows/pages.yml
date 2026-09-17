@@ -30,14 +30,15 @@ jobs:
       - name: Stamp proxy Worker URL
         # PROXY_URL is a plain repository *variable* (Settings -> Secrets
         # and variables -> Actions -> Variables), not a Secret - it ends up
-        # in this public static bundle either way (see sync.js), so there is
-        # nothing to protect by hiding it. Left unset, this substitutes the
-        # empty string, which sync.js's own isSyncProxyConfigured()
-        # correctly reads as "sync not configured" - same fallback shape as
-        # Orbit's own VITE_PROXY_URL. It's the Worker's base URL only
-        # (no path) - sync.js appends the /vocab-sync path itself.
+        # in this public static bundle either way (see sync.js/vocab-ai.js),
+        # so there is nothing to protect by hiding it. Left unset, this
+        # substitutes the empty string, which each file's own
+        # isSyncProxyConfigured()/isVocabAiConfigured() correctly reads as
+        # "not configured" - same fallback shape as Orbit's own
+        # VITE_PROXY_URL. It's the Worker's base URL only (no path) - each
+        # file appends its own path (/vocab-sync, /vocab-ai) itself.
         run: |
-          sed -i "s|__PROXY_URL__|${{ vars.PROXY_URL }}|g" sync.js
+          sed -i "s|__PROXY_URL__|${{ vars.PROXY_URL }}|g" sync.js vocab-ai.js
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
