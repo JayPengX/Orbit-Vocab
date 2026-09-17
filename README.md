@@ -172,14 +172,15 @@ Orbit 自己的資料。跟 Orbit 自己的課表同步不同的地方：這裡�
 匯入就完全是本機自己的事，想匯入哪一份備份都可以，沒有任何限制；沒有設定同步的裝置
 本來就不受這個限制，匯入照常運作。
 
-自建 fork 若沒有部署站台的 `/vocab-sync` 代理（`VOCAB_SYNC_PROXY_URL` 這個 GitHub
-Actions repository variable 留空），同步面板會顯示「跨裝置同步功能尚未設定」，不影響
-本機的其他功能。部署者的設定步驟：先照 Orbit 專案 README 的〈跨裝置同步〉與〈這支
-Worker 同時也服務 English Vocabulary Tool 的同步功能〉兩節部署好那支 Worker，把
-Worker 網址**加上 `/vocab-sync`**，設進這個 repo 的 Settings → Secrets and
-variables → Actions → **Variables** → `VOCAB_SYNC_PROXY_URL`（不是 Secret，這個值
-本來就會進公開前端程式碼），推送到 `main` 後 `.github/workflows/pages.yml` 會在建置時
-把它寫進 `sync.js`。
+自建 fork 若沒有部署站台的 `/vocab-sync` 代理（`PROXY_URL` 這個 GitHub Actions
+repository variable 留空），同步面板會顯示「跨裝置同步功能尚未設定」，不影響本機的
+其他功能。部署者的設定步驟：先照 Orbit 專案 README 的〈跨裝置同步〉與〈這支 Worker
+同時也服務 Orbit Vocab 的同步功能〉兩節部署好那支 Worker，複製 Worker 網址（**不要
+加路徑**——`/vocab-sync` 這個路徑是 `sync.js` 自己寫死補上的，設定值只需要 Worker 本身
+的網址），設進這個 repo 的 Settings → Secrets and variables → Actions →
+**Variables** → `PROXY_URL`（不是 Secret，這個值本來就會進公開前端程式碼；跟 Orbit
+專案自己的 `PROXY_URL` 是同一個值，因為兩邊共用同一支 Worker），推送到 `main` 後
+`.github/workflows/pages.yml` 會在建置時把它寫進 `sync.js`。
 
 ## 架構
 

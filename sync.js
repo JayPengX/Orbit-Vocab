@@ -32,7 +32,15 @@
 // index.html/app.js. Left as the literal placeholder (or empty, if the
 // GitHub Actions variable behind it is unset) when running locally without
 // that build step - see isSyncProxyConfigured() below.
-const VOCAB_SYNC_PROXY_URL = "__VOCAB_SYNC_PROXY_URL__";
+//
+// PROXY_URL is just the Worker's base URL (e.g.
+// https://orbit-workers-proxy.<you>.workers.dev, no path) - the same single
+// variable also used by Orbit's own app for its /gemini, /nl-edit and /sync
+// paths (see that repo's src/proxy-config.js). The `/vocab-sync` path below
+// is hardcoded here, not part of the configured value.
+const PROXY_URL = "__PROXY_URL__";
+const VOCAB_SYNC_PROXY_URL =
+  PROXY_URL && !PROXY_URL.startsWith("__") ? `${PROXY_URL.replace(/\/+$/, "")}/vocab-sync` : PROXY_URL;
 
 // Both this pairing's identifier and its only credential - see the
 // file-level comment above on why there's no separate "code" any more.
@@ -89,10 +97,11 @@ function writeLocal(key, value) {
 }
 
 function isSyncProxyConfigured() {
-  // Unreplaced local dev keeps the literal `__VOCAB_SYNC_PROXY_URL__`
-  // placeholder; an unset-but-substituted GitHub Actions variable becomes
-  // an empty string. Both mean "no proxy" - same two-case check app.js's
-  // own checkForUpdate() already uses for __BUILD_VERSION__.
+  // Unreplaced local dev keeps the literal `__PROXY_URL__` placeholder (see
+  // PROXY_URL above); an unset-but-substituted GitHub Actions variable
+  // becomes an empty string, which VOCAB_SYNC_PROXY_URL passes through
+  // unchanged. Both mean "no proxy" - same two-case check app.js's own
+  // checkForUpdate() already uses for __BUILD_VERSION__.
   return !!VOCAB_SYNC_PROXY_URL && !VOCAB_SYNC_PROXY_URL.startsWith("__");
 }
 function getSyncPasscode() {
