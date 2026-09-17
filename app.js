@@ -1875,12 +1875,15 @@ function buildDetailedWrongAnswerHtml(detail) {
 }
 
 // The correct word's zh meaning, plus (for 答錯待複習 only, via
-// buildDetailedWrongAnswerHtml) what was actually typed wrong last time -
-// both revealed together the moment a flashcard is flipped.
+// buildDetailedWrongAnswerHtml) what was actually typed wrong last time, and
+// the same live AI mnemonic 複習's list view offers (see renderMnemonicCell)
+// - both revealed together the moment a flashcard is flipped.
 function buildFlashcardRevealHtml(detail, showWrongInfo) {
   const zhHtml = zhLines(detail.zh).map((l) => escapeHtml(l)).join("<br>");
   const wrongHtml = showWrongInfo && detail.lastWrongAnswer ? `<div class="word-card-wrong answer-diff">${buildDetailedWrongAnswerHtml(detail)}</div>` : "";
-  return `<div>${zhHtml}</div>${wrongHtml}`;
+  const mnemonic = showWrongInfo ? renderMnemonicCell(detail) : "";
+  const mnemonicHtml = mnemonic ? `<div class="word-card-mnemonic">${mnemonic}</div>` : "";
+  return `<div>${zhHtml}</div>${wrongHtml}${mnemonicHtml}`;
 }
 
 // A long English word (e.g. "telecommunications", 18 letters) has no
@@ -2254,6 +2257,13 @@ document.getElementById("flashcard-mark-btn").addEventListener("click", () => {
 document.getElementById("flashcard-play-btn").addEventListener("click", () => {
   speak(document.getElementById("flashcard-play-btn").dataset.word);
 });
+// Delegated (unlike the two buttons above, which are fixed elements) since
+// the mnemonic button lives inside #flashcard-reveal's innerHTML, which
+// renderFlashcard replaces wholesale on every card - see buildFlashcardRevealHtml.
+document.getElementById("flashcard-reveal").addEventListener("click", (e) => {
+  const mnemonicBtn = e.target.closest(".row-mnemonic-btn");
+  if (mnemonicBtn) handleMnemonicButtonClick(mnemonicBtn);
+});
 
 // Drag-to-swipe + tap-to-flip on the flashcard itself, via Pointer Events
 // (covers touch, mouse, and pen in one set of listeners - no separate
@@ -2313,7 +2323,7 @@ const FLASHCARD_SWIPE_OUT_MS = 180;
   }
 
   el.addEventListener("pointerdown", (e) => {
-    if (e.target.closest(".flashcard-play-btn, .flashcard-mark-btn")) return; // let their own click handlers run
+    if (e.target.closest(".flashcard-play-btn, .flashcard-mark-btn, .row-mnemonic-btn")) return; // let their own click handlers run
     dragging = true;
     moved = false;
     startX = e.clientX;
@@ -2559,13 +2569,14 @@ function renderWrongAnswerCell(detail) {
 // A live, personalized mnemonic (vocab-ai.js's generateMnemonic), built
 // from THIS word's own recentWrongAnswers - only worth offering once
 // there's actual mistake history to personalize on, so this returns "" (no
-// button at all, see buildWordCard's own use of this) for a word that's
-// never been typed wrong. Also hidden when vocab-ai.js isn't configured (a
-// fork without the Worker deployed) - checked per call, not just once,
-// since 複習's word cards can render before vocab-ai.js's own script tag
-// has finished evaluating on a very first paint (script tags run in order,
-// so in practice it always has by the time a user could click anything,
-// but there's no reason to assume that here specifically).
+// button at all, see buildWordCard's and buildFlashcardRevealHtml's own use
+// of this) for a word that's never been typed wrong. Also hidden when
+// vocab-ai.js isn't configured (a fork without the Worker deployed) -
+// checked per call, not just once, since 複習's word cards/flashcards can
+// render before vocab-ai.js's own script tag has finished evaluating on a
+// very first paint (script tags run in order, so in practice it always has
+// by the time a user could click anything, but there's no reason to assume
+// that here specifically).
 function renderMnemonicCell(detail) {
   if (!detail.recentWrongAnswers.length) return "";
   if (!window.VocabAi || !window.VocabAi.isConfigured()) return "";

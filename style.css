@@ -917,6 +917,10 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
   font-size: 0.9rem;
 }
 
+.flashcard-reveal .word-card-mnemonic {
+  margin-top: 10px;
+}
+
 .flashcard-tap-hint {
   margin: 2px 0 0 0;
   font-size: 0.75rem;
