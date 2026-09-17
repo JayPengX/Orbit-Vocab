@@ -1603,12 +1603,6 @@ let flashcardCategory = "incorrect";
 // same way leaving an unfinished quiz round is (see isLeavingActiveRound).
 let flashcardInProgress = false;
 const FLASHCARD_MIN_AMOUNT = 20;
-// Mirrors the Worker's own VOCAB_AI_MIN_STORY_WORDS/VOCAB_AI_MAX_STORY_WORDS
-// (cloudflare-worker/orbit-worker.js in the Orbit repo) so the "至少需要 N
-// 個單字" hint can be shown client-side before ever making a request,
-// rather than only discovering the minimum from a 400 response.
-const VOCAB_AI_MIN_STORY_WORDS = 2;
-const VOCAB_AI_MAX_STORY_WORDS = 6;
 
 const REVIEWLIST_SORT_OPTIONS = {
   incorrect: [
@@ -1694,6 +1688,10 @@ function buildWordCard(detail, showWrongInfo) {
   const metaParts = showWrongInfo
     ? [`已作答 ${detail.attempts} 次`, `平均反應時間 ${formatMs(detail.avgCorrectResponseMs)}`]
     : [`連續正確 ${detail.correctStreak} / ${Logic.CONFIG.memorizedStreak}`, `平均反應時間 ${formatMs(detail.avgCorrectResponseMs)}`];
+  // Only offered alongside the wrong-answer diff (答錯待複習) - see
+  // renderMnemonicCell's own comment on why this needs actual mistake
+  // history to personalize on.
+  const mnemonic = showWrongInfo ? renderMnemonicCell(detail) : "";
 
   return `
     <div class="word-card">
@@ -1709,6 +1707,7 @@ function buildWordCard(detail, showWrongInfo) {
       </div>
       <div class="word-card-meta muted">${metaParts.join("　・　")}</div>
       ${showWrongInfo ? `<div class="word-card-wrong">${renderWrongAnswerCell(detail)}</div>` : ""}
+      ${mnemonic ? `<div class="word-card-mnemonic">${mnemonic}</div>` : ""}
       <div class="row-zh hidden">${zhLines(detail.zh).map((l) => escapeHtml(l)).join("<br>")}</div>
     </div>`;
 }
@@ -1793,18 +1792,6 @@ function buildFlashcardDeck(category, amount) {
   const models = Logic.buildPriorityModels(progressStore, AI_SIGNALS);
   const ranked = Logic.rankCandidates(wordsInCategory(category), progressStore, Math.random, Date.now(), models, category);
   return wordsToReviewItems(ranked.slice(0, amount));
-}
-
-// The word list sent to vocab-ai.js's generateStory: the same
-// risk-ranked pick as buildFlashcardDeck above (so a story leans toward the
-// words actually worth reinforcing right now, not just whichever are
-// alphabetically first), trimmed down to {word, meaning} - the only two
-// fields the Worker's /vocab-ai story prompt needs (see that file's
-// handleVocabAiRequest).
-function buildStoryWordPicks(category, amount) {
-  const models = Logic.buildPriorityModels(progressStore, AI_SIGNALS);
-  const ranked = Logic.rankCandidates(wordsInCategory(category), progressStore, Math.random, Date.now(), models, category);
-  return ranked.slice(0, amount).map((w) => ({ word: w.word, meaning: zhLines(w.zh).join("；") }));
 }
 
 function reviewListEmptyText() {
@@ -2030,7 +2017,6 @@ function renderReviewList() {
   updateReviewListCounts();
   renderReviewListListView(currentReviewListItems());
   updateFlashcardLaunchHint();
-  updateStoryUiAvailability();
 }
 
 // Flips a word's "review this again" flag and persists it - shared by the
@@ -2179,64 +2165,12 @@ function updateFlashcardLaunchHint() {
   btn.disabled = false;
 }
 
-// Same refresh triggers as updateFlashcardLaunchHint above (review-list
-// re-render, launch category tab change) - shares flashcardLaunchCategory
-// rather than having its own picker, since "which category" is one
-// decision that both the flashcard deck and the AI story pull from. Hides
-// the whole #story-panel when vocab-ai.js isn't configured (a fork without
-// the Worker deployed) - see that file's isVocabAiConfigured - rather than
-// showing a button that would only ever fail.
-function updateStoryUiAvailability() {
-  const panel = document.getElementById("story-panel");
-  if (!panel) return;
-  if (!window.VocabAi || !window.VocabAi.isConfigured()) {
-    panel.classList.add("hidden");
-    return;
-  }
-  panel.classList.remove("hidden");
-  const hintEl = document.getElementById("story-hint");
-  const btn = document.getElementById("story-generate-btn");
-  if (!hintEl || !btn) return;
-  const available = wordsInCategory(flashcardLaunchCategory).length;
-  if (available < VOCAB_AI_MIN_STORY_WORDS) {
-    hintEl.textContent = `這個分類目前只有 ${available} 個單字，至少需要 ${VOCAB_AI_MIN_STORY_WORDS} 個才能生成故事。`;
-    btn.disabled = true;
-    return;
-  }
-  hintEl.textContent = `這個分類目前有 ${available} 個單字，會從中挑最多 ${VOCAB_AI_MAX_STORY_WORDS} 個生成故事。`;
-  btn.disabled = false;
-}
-
 document.getElementById("flashcard-launch-category").addEventListener("click", (e) => {
   const btn = e.target.closest(".segmented-btn[data-category]");
   if (!btn || btn.dataset.category === flashcardLaunchCategory) return;
   flashcardLaunchCategory = btn.dataset.category;
   document.querySelectorAll("#flashcard-launch-category .segmented-btn").forEach((b) => b.classList.toggle("active", b === btn));
   updateFlashcardLaunchHint();
-  updateStoryUiAvailability();
-});
-
-// Generates one story from up to VOCAB_AI_MAX_STORY_WORDS of the currently
-// selected category's words (see buildStoryWordPicks) - a manual, opt-in
-// action (like Orbit's own AI features) rather than automatic, since it's a
-// live network call against a rate-limited Worker endpoint.
-document.getElementById("story-generate-btn").addEventListener("click", async () => {
-  const btn = document.getElementById("story-generate-btn");
-  const resultEl = document.getElementById("story-result");
-  if (!btn || !resultEl || btn.disabled) return;
-  const picks = buildStoryWordPicks(flashcardLaunchCategory, VOCAB_AI_MAX_STORY_WORDS);
-  if (picks.length < VOCAB_AI_MIN_STORY_WORDS) return; // the button is disabled for this too - never trust the DOM alone
-  btn.disabled = true;
-  resultEl.classList.remove("hidden", "danger-text");
-  resultEl.textContent = "生成中…";
-  const result = await window.VocabAi.generateStory(picks);
-  btn.disabled = false;
-  if (!result.ok) {
-    resultEl.textContent = result.error;
-    resultEl.classList.add("danger-text");
-    return;
-  }
-  resultEl.textContent = `📖 ${result.story}`;
 });
 
 // Starts a new flashcard-mode session: builds a deck of the chosen amount
@@ -2447,6 +2381,11 @@ document.getElementById("view-reviewlist").addEventListener("click", (e) => {
   if (pagerBtn) {
     reviewListPage = Math.max(0, reviewListPage + Number(pagerBtn.dataset.dir));
     renderReviewList();
+    return;
+  }
+  const mnemonicBtn = e.target.closest(".row-mnemonic-btn");
+  if (mnemonicBtn) {
+    handleMnemonicButtonClick(mnemonicBtn);
   }
 });
 
@@ -2498,20 +2437,15 @@ document.getElementById("progress-word-table").addEventListener("click", (e) => 
   if (toggle) {
     const zhDiv = toggle.closest(".word-cell").querySelector(".row-zh");
     if (zhDiv) zhDiv.classList.toggle("hidden");
-    return;
-  }
-  const mnemonicBtn = e.target.closest(".row-mnemonic-btn");
-  if (mnemonicBtn) {
-    handleMnemonicButtonClick(mnemonicBtn);
   }
 });
 
 // Generates a personalized memory hook for one word, built from this
 // learner's own recorded wrong-answer history (see vocab-ai.js's
 // generateMnemonic and the button's data-* attributes set in
-// renderWordTable) - a manual, opt-in action rather than automatic, same
-// reasoning as the story-generate-btn handler above: it's a live network
-// call against a rate-limited Worker endpoint, not something to fire on
+// renderMnemonicCell) - a manual, opt-in action rather than automatic: it's
+// a live network call against a rate-limited Worker endpoint, not something
+// to fire on
 // every render.
 async function handleMnemonicButtonClick(button) {
   if (button.disabled) return;
@@ -2625,17 +2559,16 @@ function renderWrongAnswerCell(detail) {
 // A live, personalized mnemonic (vocab-ai.js's generateMnemonic), built
 // from THIS word's own recentWrongAnswers - only worth offering once
 // there's actual mistake history to personalize on, so this returns "" (no
-// button at all) for a word that's never been typed wrong, same as
-// renderWrongAnswerCell's own "—" for that case meaning there's nothing
-// here either. Also hidden when vocab-ai.js isn't configured (a fork
-// without the Worker deployed) - checked per call, not just once, since
-// this whole table can render before vocab-ai.js's own script tag has
-// finished evaluating on a very first paint (script tags run in order, so
-// in practice it always has by the time a user could click anything, but
-// there's no reason to assume that here specifically).
+// button at all, see buildWordCard's own use of this) for a word that's
+// never been typed wrong. Also hidden when vocab-ai.js isn't configured (a
+// fork without the Worker deployed) - checked per call, not just once,
+// since 複習's word cards can render before vocab-ai.js's own script tag
+// has finished evaluating on a very first paint (script tags run in order,
+// so in practice it always has by the time a user could click anything,
+// but there's no reason to assume that here specifically).
 function renderMnemonicCell(detail) {
-  if (!detail.recentWrongAnswers.length) return "—";
-  if (!window.VocabAi || !window.VocabAi.isConfigured()) return "—";
+  if (!detail.recentWrongAnswers.length) return "";
+  if (!window.VocabAi || !window.VocabAi.isConfigured()) return "";
   return `
     <button type="button" class="btn secondary small row-mnemonic-btn"
       data-word="${escapeHtml(detail.word)}"
@@ -2694,16 +2627,15 @@ function renderWordTable() {
         <td title="系統預測此字現在被答錯的機率，僅供 Auto 模式判斷要不要把已熟記的字抽回來複習用，不影響「狀態」欄的已熟記／學習中判定">${Math.round((detail.masteryMean || 0) * 100)}%</td>
         <td>${formatMs(detail.avgCorrectResponseMs)}</td>
         <td>${renderWrongAnswerCell(detail)}</td>
-        <td class="mnemonic-cell">${renderMnemonicCell(detail)}</td>
         <td><span class="state-badge ${detail.state}">${STATE_LABELS[detail.state]}</span></td>
       </tr>`)
     .join("");
 
   container.innerHTML = `
-    <p class="hint">從未答錯的字，答對一次就算「已熟記」；答錯過的字則需要連續答對 ${Logic.CONFIG.memorizedStreak} 次才會回到「已熟記」，答錯一次就歸零重算。已熟記的字理論上不會再出現，但 Auto 模式會依「風險預測」欄位不定期抽幾個風險較高的已熟記單字回來複習，確認沒有忘記。滑鼠移到「最近錯誤」可看更多紀錄。點「AI 記憶法」可以請 AI 針對你這個字實際打錯的地方，產生一個專屬的記憶提示。</p>
+    <p class="hint">從未答錯的字，答對一次就算「已熟記」；答錯過的字則需要連續答對 ${Logic.CONFIG.memorizedStreak} 次才會回到「已熟記」，答錯一次就歸零重算。已熟記的字理論上不會再出現，但 Auto 模式會依「風險預測」欄位不定期抽幾個風險較高的已熟記單字回來複習，確認沒有忘記。滑鼠移到「最近錯誤」可看更多紀錄。</p>
     <div class="word-table-wrap">
       <table class="word-table">
-        <thead><tr><th>單字</th><th>等級</th><th>對／錯</th><th title="Auto 模式用來判斷是否該把已熟記的字抽回來複習的風險預測分數">風險預測</th><th>平均反應時間</th><th>最近錯誤</th><th>AI 記憶法</th><th>狀態</th></tr></thead>
+        <thead><tr><th>單字</th><th>等級</th><th>對／錯</th><th title="Auto 模式用來判斷是否該把已熟記的字抽回來複習的風險預測分數">風險預測</th><th>平均反應時間</th><th>最近錯誤</th><th>狀態</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>

@@ -343,21 +343,18 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
   color: var(--muted);
 }
 
-/* Live, personalized AI features (vocab-ai.js) - Progress word-table's
-   per-word mnemonic button/result and the 複習 flashcard-launch panel's
-   story button/result share this same result-box look. */
-.mnemonic-cell {
-  min-width: 140px;
+/* Live, personalized AI feature (vocab-ai.js) - 複習 word-card's per-word
+   mnemonic button/result. */
+.word-card-mnemonic {
+  margin-top: 6px;
 }
-.ai-mnemonic-result,
-#story-result {
+.ai-mnemonic-result {
   margin-top: 6px;
   font-size: 0.85rem;
   color: var(--muted);
   max-width: 320px;
 }
-.ai-mnemonic-result.danger-text,
-#story-result.danger-text {
+.ai-mnemonic-result.danger-text {
   color: var(--danger);
 }
 

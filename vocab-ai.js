@@ -1,27 +1,24 @@
 "use strict";
 
 // ---- vocab-ai.js ----
-// Thin client for this app's live, per-learner AI features - Orbit's shared
+// Thin client for this app's live, per-learner AI feature - Orbit's shared
 // Cloudflare Worker's /vocab-ai path (see that repo's
-// cloudflare-worker/orbit-worker.js). Two on-demand, per-request features
-// that need to know THIS learner's own current data, unlike the offline
+// cloudflare-worker/orbit-worker.js). An on-demand, per-request feature
+// that needs to know THIS learner's own current data, unlike the offline
 // batch-generated data/ai_signals.json (scripts/generate_ai_signals.py)
 // already loaded once at startup and shown in the quiz feedback panel
 // (app.js's renderAnswerFeedback):
 //   - a personalized mnemonic targeted at a word's own recorded
-//     wrong-answer pattern (kind: "mnemonic") - see app.js's Progress
-//     word-table "🪄 AI 記憶法" button.
-//   - a short memory-palace-style story weaving together a handful of the
-//     learner's current 答錯待複習/學習中 words (kind: "story") - see
-//     app.js's 複習 flashcard-launch panel "📖 生成故事" button.
+//     wrong-answer pattern (kind: "mnemonic") - see app.js's 複習
+//     word-card "🪄 AI 記憶法" button.
 //
 // This module only talks to the Worker - it has no DOM of its own. Unlike
 // sync.js (a self-contained feature with its own fixed panel in
-// index.html), the buttons that call this live inside app.js's own
-// re-rendered tables/lists (Progress 單字明細, 複習), which already own
-// event delegation for their dynamically-rebuilt HTML - there is nothing
-// here for a fixed getElementById wiring pass to attach to, so app.js calls
-// straight into the functions exposed below.
+// index.html), the button that calls this lives inside app.js's own
+// re-rendered 複習 list, which already owns event delegation for its
+// dynamically-rebuilt HTML - there is nothing here for a fixed
+// getElementById wiring pass to attach to, so app.js calls straight into
+// the function exposed below.
 //
 // Same PROXY_URL placeholder mechanism as sync.js - see that file's
 // top-of-file comment for the full explanation. Reuses the exact same
@@ -90,23 +87,7 @@ async function generateMnemonic({ word, pos, meaning, wrongAnswers }) {
   return { ok: true, mnemonic };
 }
 
-// `words`: [{word, meaning}, ...], expects 2-6 entries - see the Worker's
-// own VOCAB_AI_MIN_STORY_WORDS/VOCAB_AI_MAX_STORY_WORDS (mirrored in
-// app.js's own constants of the same name so the "至少需要 N 個單字" hint
-// can be shown before ever making a request). The Worker echoes back which
-// words it actually used (after its own filtering/truncation) as
-// result.words - callers that want to confirm every requested word made it
-// into the story should compare against that, not just assume theirs did.
-async function generateStory(words) {
-  const result = await callVocabAi({ kind: "story", words: Array.isArray(words) ? words : [] });
-  if (!result.ok) return result;
-  const story = typeof result.data?.story === "string" ? result.data.story.trim() : "";
-  if (!story) return { ok: false, error: "AI 沒有回傳有效的故事，請稍後再試一次。" };
-  return { ok: true, story, words: Array.isArray(result.data.words) ? result.data.words : [] };
-}
-
 window.VocabAi = {
   isConfigured: isVocabAiConfigured,
   generateMnemonic: generateMnemonic,
-  generateStory: generateStory,
 };
