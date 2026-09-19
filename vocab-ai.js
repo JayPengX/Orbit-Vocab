@@ -1,9 +1,9 @@
 "use strict";
 
 // ---- vocab-ai.js ----
-// Thin client for this app's live, per-learner AI feature - Orbit's shared
-// Cloudflare Worker's /vocab-ai path (see that repo's
-// cloudflare-worker/orbit-worker.js). An on-demand, per-request feature
+// Thin client for this app's live, per-learner AI feature - the shared
+// Cloudflare Worker's /vocab-ai path (see the separate jaypengx-collab/
+// shared-proxy repo's worker.js). An on-demand, per-request feature
 // that needs to know THIS learner's own current data, unlike the offline
 // batch-generated data/ai_signals.json (scripts/generate_ai_signals.py)
 // already loaded once at startup and shown in the quiz feedback panel

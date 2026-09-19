@@ -125,15 +125,17 @@
 避免越限流、越重試、越限流的惡性循環；冷卻時間一到就會自動繼續同步，不需要手動介入，
 而且學習紀錄本來就一直安全地存在本機 `localStorage`，不會因為暫時同步不了而遺失。
 
-這個功能沒有自己的伺服器：重用姊妹專案 [Orbit](https://github.com/jaypengx-collab/Orbit)
-已經部署好的 Cloudflare Worker（見該專案 `cloudflare-worker/orbit-worker.js` 的
-`/vocab-sync` 路徑）當共用的伺服器端代理，存進獨立的 Firestore collection，不影響
+這個功能沒有自己的伺服器：重用獨立的 [jaypengx-collab/shared-proxy](https://github.com/jaypengx-collab/shared-proxy)
+repo 已經部署好的 Cloudflare Worker（見該 repo 的 `worker.js`，`/vocab-sync` 路徑——
+這支 Worker 同時也服務姊妹專案 [Orbit](https://github.com/jaypengx-collab/Orbit) 自己
+的課表同步）當共用的伺服器端代理，存進獨立的 Firestore collection，不影響
 Orbit 自己的資料。跟 Orbit 自己的課表同步不同的地方：這裡沒有「管理者／僅接收」兩種
 身份，也沒有另一組較不敏感、可以公開分享的代碼——一組同步密碼永遠對應**同一個學習者
 自己的多台裝置**，沒有廣播給別人唯讀的情境，所以每台加入同步的裝置都能同時讀寫；讀取
 （不只寫入）也需要這組密碼才能成功，避免只是瞄到畫面、卻不知道密碼的人讀到別人的學習
-紀錄。伺服器端只存這組密碼的雜湊值，不存明文（見 `orbit-worker.js` 的 `VOCAB_SYNC_APP`
-與其 `singleCredential` 設計），即使 Firestore 資料外洩也推不回原始密碼；密碼長度也
+紀錄。伺服器端只存這組密碼的雜湊值，不存明文（見 shared-proxy 的 `worker.js` 裡
+`VOCAB_SYNC_APP` 與其 `singleCredential` 設計），即使 Firestore 資料外洩也推不回原始
+密碼；密碼長度也
 從早期版本的 8 碼加長到 16 碼（同一套字母表下約 80 bits 的熵），讓「只有一組密碼、
 沒有第二道防線」這件事本身仍然夠安全。
 
@@ -144,7 +146,7 @@ Orbit 自己的資料。跟 Orbit 自己的課表同步不同的地方：這裡�
 完整紀錄仍完整留在本機，不影響本機的複習清單顯示），最後才整包用 `gzip` 壓縮＋base64
 編碼上傳。實測（500 個混合各種情境的單字）光是這層精簡就讓壓縮後的體積再小上約
 80%；即使把全部 3,060 個單字都練過一輪的最壞情況估算，上傳體積也大約只有 40 KB 上下，
-遠低於 Cloudflare Worker 端設定的上限（見 Orbit 專案 `orbit-worker.js` 的
+遠低於 Cloudflare Worker 端設定的上限（見 shared-proxy 的 `worker.js` 裡
 `VOCAB_MAX_PAYLOAD_LENGTH`），對部署站台的 Firestore／Workers 用量影響很小。
 
 第一次「加入同步」會用共用的紀錄**取代**這台裝置目前的學習紀錄（會先自動備份這台裝置
@@ -174,19 +176,19 @@ Orbit 自己的資料。跟 Orbit 自己的課表同步不同的地方：這裡�
 
 自建 fork 若沒有部署站台的 `/vocab-sync` 代理（`PROXY_URL` 這個 GitHub Actions
 repository variable 留空），同步面板會顯示「跨裝置同步功能尚未設定」，不影響本機的
-其他功能。部署者的設定步驟：先照 Orbit 專案 README 的〈跨裝置同步〉與〈這支 Worker
-同時也服務 Orbit Vocab 的同步功能〉兩節部署好那支 Worker，複製 Worker 網址（**不要
-加路徑**——`/vocab-sync` 這個路徑是 `sync.js` 自己寫死補上的，設定值只需要 Worker 本身
-的網址），設進這個 repo 的 Settings → Secrets and variables → Actions →
-**Variables** → `PROXY_URL`（不是 Secret，這個值本來就會進公開前端程式碼；跟 Orbit
-專案自己的 `PROXY_URL` 是同一個值，因為兩邊共用同一支 Worker），推送到 `main` 後
-`.github/workflows/pages.yml` 會在建置時把它寫進 `sync.js`。
+其他功能。部署者的設定步驟：先照 [jaypengx-collab/shared-proxy](https://github.com/jaypengx-collab/shared-proxy)
+repo README 部署好那支 Worker（Firebase 專案、服務帳戶金鑰等完整步驟都在那份 README
+裡），複製 Worker 網址（**不要加路徑**——`/vocab-sync` 這個路徑是 `sync.js` 自己寫死
+補上的，設定值只需要 Worker 本身的網址），設進這個 repo 的 Settings → Secrets and
+variables → Actions → **Variables** → `PROXY_URL`（不是 Secret，這個值本來就會進
+公開前端程式碼；跟 Orbit 專案自己的 `PROXY_URL` 是同一個值，因為兩邊共用同一支
+Worker），推送到 `main` 後 `.github/workflows/pages.yml` 會在建置時把它寫進 `sync.js`。
 
 ## AI 學習功能
 
-選用功能，跟跨裝置同步一樣重用 [Orbit](https://github.com/jaypengx-collab/Orbit) 已經
-部署好的 Cloudflare Worker（見該專案 `cloudflare-worker/orbit-worker.js` 的 `/vocab-ai`
-路徑），不需要自己的 Firebase 專案，也不需要額外申請或設定任何 Secret——只要上面
+選用功能，跟跨裝置同步一樣重用 [jaypengx-collab/shared-proxy](https://github.com/jaypengx-collab/shared-proxy)
+已經部署好的 Cloudflare Worker（見該 repo 的 `worker.js`，`/vocab-ai` 路徑），不需要
+自己的 Firebase 專案，也不需要額外申請或設定任何 Secret——只要上面
 〈跨裝置同步〉已經設定好 `PROXY_URL`，這個功能就會自動可用（`PROXY_URL` 留空時，
 下面這個入口會直接消失，不會出現按了會失敗的死按鈕）：
 

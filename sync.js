@@ -2,13 +2,13 @@
 
 // ---- sync.js ----
 // Optional cross-device sync for this app's learning progress (the
-// progressStore app.js already keeps in localStorage). Reuses Orbit's own
-// Cloudflare Worker (see that project's cloudflare-worker/orbit-worker.js,
-// its `/vocab-sync` path) as shared server-side infrastructure - this app
-// has no server of its own, and piggybacking on an already-deployed Worker
-// means its owner doesn't need a second Firebase project or a second thing
-// to keep patched just for this. See Orbit's README ("這支 Worker 同時也
-// 服務 English Vocabulary Tool 的同步功能") for what runs server-side.
+// progressStore app.js already keeps in localStorage). Reuses the shared
+// Cloudflare Worker (see the separate jaypengx-collab/shared-proxy repo's
+// worker.js, its `/vocab-sync` path) as shared server-side infrastructure -
+// this app has no server of its own, and piggybacking on an already-
+// deployed Worker means its owner doesn't need a second Firebase project or
+// a second thing to keep patched just for this. See shared-proxy's README
+// for what runs server-side.
 //
 // Unlike Orbit's own schedule sync (one shared document broadcast from a
 // manager device to many read-only viewer devices), this app's sync has no
@@ -21,7 +21,7 @@
 // would just be one more string to type, copy, and lose, for no extra
 // security. A single, longer passcode (see PASSCODE_KEY) is both this
 // pairing's identifier and its only credential - the Worker derives its own
-// server-side lookup key from it (see that repo's orbit-worker.js), never
+// server-side lookup key from it (see shared-proxy's worker.js), never
 // storing or exposing anything the passcode itself doesn't already prove
 // you know.
 //
