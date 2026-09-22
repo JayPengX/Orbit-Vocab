@@ -1,342 +1,531 @@
-# 英單力 YingDanLi
+# YingDanLi (英單力)
 
-🔗 **線上使用：[jaypengx-collab.github.io/Orbit-Vocab](https://jaypengx-collab.github.io/Orbit-Vocab/)**
+A front-end-only high-school English vocabulary dictation and spaced-review trainer.
 
-**英單力**是一個純前端（無需安裝、無需伺服器）的高中英文單字聽寫測驗與複習工具，內建大學
-入學考試中心（大考中心）「高中英文參考詞彙表」（108 課綱）Level 4、5、6，共 3,060 個單字。
-支援「加到主畫面」，加入後跟原生 App 一樣有獨立圖示、全螢幕啟動，也能離線使用已練習過的
-內容（見下方〈加到主畫面與離線使用〉）。
+> **Try it now — Live site: [jaypengx-collab.github.io/Orbit-Vocab](https://jaypengx-collab.github.io/Orbit-Vocab/)**
+> No install, no login, no server required. Add it to your home screen for a native-app-like, installable, offline-capable experience (see [Install to Home Screen & Offline Use](#install-to-home-screen--offline-use-pwa)).
 
-## 功能
+## Table of Contents
 
-- **單字測驗**：播放預先錄製的高品質單字發音（見下方〈單字發音〉），聽完後輸入拼字，
-  立即核對答案並顯示中文意思。**照時間長度出題，不是照題數**：首頁用滑桿拖曳（或點選
-  快速選項）決定要練習幾分鐘（預設 10 分鐘，2～30 分鐘可調），時間到會自動結束並顯示
-  成績；實際會出幾題完全依你自己的作答速度而定，不用自己抓題數。測驗畫面計時器旁有一個
-  「結束」按鈕，可以隨時提早結束這一回合並直接看目前的成績，不用等時間到或先跳去別的
-  分頁再確認離開。同一回合不會出現重複單字，已熟記的單字不會再出現。
-- **四種測驗模式**（首頁「測驗模式」區塊選擇）：
-  - **⚖️ 自動平衡**（預設）：依你目前「答錯待複習／學習中／新字」各有多少單字，即時
-    算出這回合的出題比例——不是三等分，而是複習量（答錯＋學習中）越多，複習佔比就越高
-    （10%～95% 之間），但不會完全變成 100% 複習，會留一點新字持續出現；只有當所選等級
-    範圍內已經沒有新字可出時才會變成 100% 複習。複習量裡答錯的單字又比學習中的單字更
-    優先。同時選了多個等級時，也會依各等級目前被練習的頻率自動互相平衡，避免其中一個
-    等級的單字因為難度分數比較高／低就整回合幾乎只出現那個等級。**這個比例在回合中
-    會持續即時重新計算**：每答完一題，系統就依當下最新的單字狀態重算一次，把還沒出到的
-    題目換成新的比例，不用練完整回合才調整。**選題時「新字」跟「答錯待複習／學習中」用
-    的是相反的優先順序**：新字會優先挑預測比較容易答錯的字，讓真正該花時間的生字提早
-    出現；答錯待複習／學習中則優先挑預測比較容易答對的字，讓快要背熟的字加速從清單上
-    清掉，把複習時間留給真正還不熟的字。
-  - **🆕 新字優先**：固定 80% 新字、10% 答錯待複習、10% 學習中。
-  - **🔁 只複習**：固定 70% 答錯待複習、30% 學習中，不出新字。
-  - **🛠️ 進階：自訂比例**：自己拖曳三個滑桿決定比例（拖一個，另外兩個會自動增減，三者
-    總和固定 100%）。若選擇的範圍字數不足，系統會自動用其他非 0% 的類別補足，但 0% 的
-    類別永遠不會出現。選擇的等級＋模式組合下如果完全沒有符合條件的單字，會顯示提示畫面
-    而不是直接出錯，可以回首頁調整。
-  - 手動勾選要練習的等級（4、5、6）預設收在首頁「🛠️ 進階：單字等級範圍」的收合區塊裡，
-    預設全部勾選；「自動平衡」模式本來就會自動平衡各等級的出題比例，一般不需要手動調整，
-    想限制只練習特定等級時再展開調整即可。
-- **單字狀態**：只有三種——**答錯待複習**（上一次答錯）、**學習中**（答對但連續對答
-  還沒到 2 次）、**已熟記**（連續答對 2 次）；答錯一次就會讓已熟記的單字立刻重新回到
-  答錯待複習，需要重新累積連續 2 次答對。狀態即時更新，不需要額外確認或手動整理。**每次
-  作答完立刻看到結果**：答錯時顯示正確拼法與打錯的地方（見下方的字母對照說明）；答對時
-  顯示這個字現在的最新狀態（學習中／已熟記），不用另外跑去「學習進度」頁才知道進步到哪。
-- **依反應時間排定複習優先度，且按單字長度公平比較**：系統會先用你所有單字的作答時間，
-  對「單字長度 vs. 反應時間」配一條簡單的迴歸線，算出「一個這個長度的字，預期要花多久」
-  （資料量還不夠、少於 8 個單字有計時資料時，退回用單純的整體平均），再拿每個單字的
-  實際反應時間跟「它自己這個長度該有的預期時間」比較——而不是拿長單字的時間直接跟全部
-  單字的平均比，那樣長單字會因為本來就要多打幾個字母，永遠被誤判成「反應慢、不熟」，
-  短單字則永遠被誤判成「很熟」，跟實際記不記得住完全無關。「複習」頁面依「反應時間」
-  排序時用的也是同一套公平比較，不會變成單純把最長的單字排在最前面。
-  「答錯待複習」「學習中」題目的挑選**由預測模型直接決定，不是機率**：預測愈優先的字
-  （新字挑愈可能答錯的、答錯待複習／學習中挑愈可能答對的——見上方〈四種測驗模式〉的
-  說明）一定會被選進這一回合，不會有分數明明比較低的字反而運氣好被抽中、排到分數更高
-  的字前面。只有預測分數真的打平（例如完全沒有資料可以區分兩個字時）才會用隨機決定
-  順序，讓兩個模型真的分不出高下的字還是能輪流出現；一旦分數有差，一定照分數高低來，
-  絕不會被隨機翻盤。多選了好幾個等級時，各等級之間會依「自動平衡」自己的比例分配名額
-  （見上方〈四種測驗模式〉），確保每個等級都拿到該有的份額，不會因為某個等級的字整體
-  預測分數比較高、就把其他等級整個擠出這一回合。
-- **記錄實際打錯的答案**：答錯時會記錄你當時實際輸入的內容，「複習」與「學習進度」頁面
-  都會顯示正確拼法並把跟你打的不一樣的字母標示出來（例如 wierd 對比 weird），方便在下
-  一次作答前先看看自己容易在哪裡打錯。
-- **提前載入下一題發音**：聽完並作答目前這題的同時，系統就已經在背景把下一題的音檔載入
-  並解碼好（自動平衡模式即時調整出題比例後，也會針對新換上的下一題重新預載一次），減少
-  換題時等音檔才播得出來的延遲。
-- **中文意思**：每個單字都附有中文意思（含詞性），作答後的回饋與回合結束的單字清單都
-  可以點擊查看。
-- **學習進度**：總覽已練習過／已熟記／學習中／答錯待複習的單字數量、整體正確率、熟記
-  率、近期正確率與平均反應時間，並依 Level 4/5/6 分別呈現進度；也可依狀態或關鍵字篩選、
-  查看每個單字的詳細作答紀錄（次數、連續正確次數、反應時間、最近打錯的答案）。
-- 可自由勾選要練習的等級（4、5、6 可複選）、選擇語速、用滑桿設定每回合的練習時間長度。
-- 所有學習紀錄儲存在瀏覽器 `localStorage`，重新整理或關閉分頁不會遺失進度（同一台裝置
-  / 同一個瀏覽器）；舊版資料會自動轉換成新格式，不會被清除。
-- **跨裝置同步**（選用）：把學習紀錄自動同步到你自己的其他裝置，不用每次手動匯出匯入，
-  詳見下方〈跨裝置同步〉。
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Review Modes — List View & Flip-Card Mode](#review-modes--list-view--flip-card-mode)
+- [Cross-Device Sync](#cross-device-sync)
+- [AI Mnemonic Generation](#ai-mnemonic-generation)
+- [Architecture](#architecture)
+- [Install to Home Screen & Offline Use (PWA)](#install-to-home-screen--offline-use-pwa)
+- [Word Pronunciation](#word-pronunciation)
+- [Getting Started](#getting-started)
+- [Data Sources](#data-sources)
+- [Deployment](#deployment)
+- [Related Projects](#related-projects)
 
-## 複習：列表與卡片複習模式
+## Overview
 
-「複習」分頁把**答錯待複習**、**學習中**與**已標記**拆成三個分頁籤，同一時間只看一種，
-畫面更清爽。這個分頁本身**永遠是**可搜尋、可排序、分頁瀏覽的單字卡片清單——答錯待複習
-會顯示正確拼法與打錯的字母對照，學習中會顯示目前的連續正確次數，想要快速掃過或用關鍵字
-搜尋時用這個；離開分頁再回來也一定會看到列表，不會停在其他畫面上。
+**YingDanLi** is a purely client-side (no install, no backend server required) English
+vocabulary dictation and review tool built for Taiwanese high-school students. It ships
+with the official Taiwanese college-entrance-exam ("大考中心" / College Entrance
+Examination Center) **"High School English Reference Vocabulary List"** (108 curriculum),
+covering **Levels 4, 5, and 6 — 3,060 words in total**.
 
-**🎴 卡片複習模式**是獨立的一個模式（跟「單字測驗」一樣，不是複習分頁裡的一個子畫面）：
-在複習分頁下方選好要複習**答錯待複習**還是**學習中**、要複習幾個單字（至少 20 個，可
-自訂），按「開始卡片複習模式」後才會進入專屬畫面。畫面上一次只顯示一個單字，字級放大、
-按鈕變大，適合專心一個一個背；點一下卡片播放發音並翻面看中文意思（答錯待複習的卡片翻面
-後也會顯示打錯對照），用手指左右滑動（或按 ‹ › 按鈕）換到上一個／下一個單字，也會提前
-載入下一張卡片的發音，減少切換等待。中途想離開的話按右上角「結束」（或直接切到別的分頁）
-會先跟單字測驗一樣跳出確認，不會沒說一聲就把進度弄丟。
+The app can be "added to the home screen" on mobile and desktop browsers, after which it
+behaves like a native app: its own icon, full-screen launch, and the ability to keep using
+already-practiced content while fully offline (see
+[Install to Home Screen & Offline Use](#install-to-home-screen--offline-use-pwa)).
 
-看完整批單字後會出現「📝 測驗這些單字」按鈕，會直接拿**這次卡片複習選定的單字組合**開
-一場真正的聽寫測驗（沿用跟首頁測驗完全相同的引擎與畫面），**答對答錯一樣會正常計入學習
-紀錄、影響單字狀態**——複習卡片本身只是瀏覽、不算作答，但接著用這個按鈕考自己，答對就會
-讓連續正確次數往上累加、真的有機會讓一個字從「學習中」變成「已熟記」；這正是複習功能
-存在的意義，如果考試結果不算數，複習就沒有實際用處了。
+## Key Features
 
-## 跨裝置同步
+- **Vocabulary dictation quizzes**: the app plays a pre-recorded, high-quality pronunciation
+  for each word (see [Word Pronunciation](#word-pronunciation)); you type the spelling
+  after listening, and get immediate feedback plus the word's Chinese meaning.
+  **Sessions are time-based, not question-count-based**: on the home screen you drag a
+  slider (or pick a quick preset) to choose how many minutes to practice (default 10
+  minutes, adjustable 2–30 minutes). The session ends automatically and shows your score
+  when time is up; exactly how many questions you get through depends entirely on your own
+  answering speed — there's no need to estimate a question count yourself. The quiz screen
+  has an "End" button next to the timer so you can stop the session early at any point and
+  see your current score immediately, without waiting for the timer or switching tabs first
+  to confirm you want to leave. No word repeats within the same session, and words you've
+  already mastered won't reappear.
+- **Four quiz modes** (selectable in the "Quiz Mode" section on the home screen):
+  - **⚖️ Auto-Balance** (default): computes the session's question ratio live, based on how
+    many words are currently in each of your three states (needs review / learning /
+    new). It is not a fixed three-way split — the more words you have needing review
+    (wrong-answer + learning), the higher the review share (ranging from **10% to 95%**) —
+    but it never goes fully to 100% review; some new words keep appearing unless there are
+    genuinely no new words left in the selected level range, in which case it does become
+    100% review. Within the review pool, wrong-answer words are prioritized over
+    learning-state words. When multiple levels are selected at once, the algorithm also
+    automatically balances practice frequency across levels, so one level doesn't dominate
+    the whole session just because its words happen to score higher or lower on
+    difficulty. **This ratio is continuously recomputed live during the session**: after
+    every answer, the system recalculates from the latest word states and swaps the ratio
+    for any questions not yet shown — you don't need to finish a whole session before the
+    balance adjusts. **New words and review words (wrong-answer/learning) use opposite
+    selection priorities**: new-word selection favors words predicted to be *harder* to get
+    right, surfacing the words that actually deserve your time sooner; review selection
+    (wrong-answer/learning) favors words predicted to be *easier* to get right, so words
+    that are close to being mastered get cleared off the list faster, leaving more review
+    time for words you genuinely don't know yet.
+  - **🆕 New-Word-First**: a fixed 80% new words / 10% wrong-answer / 10% learning split.
+  - **🔁 Review-Only**: a fixed 70% wrong-answer / 30% learning split; no new words.
+  - **🛠️ Advanced: Custom Ratio**: drag three sliders to set your own ratio (dragging one
+    automatically adjusts the other two so the three always sum to 100%). If the selected
+    level range doesn't have enough words in some category, the system automatically fills
+    the gap from the other non-zero categories — but a category set to 0% will never
+    appear. If the chosen level + mode combination yields no matching words at all, a
+    friendly prompt is shown instead of an error, letting you go back and adjust.
+  - Manually selecting which levels to practice (4, 5, 6) lives in a collapsed "🛠️
+    Advanced: Word Level Range" section on the home screen, defaulting to all levels
+    checked. Since Auto-Balance already balances ratios across levels automatically, this
+    is normally unnecessary — expand it only when you want to restrict practice to
+    specific levels.
+- **Three-state word-mastery model**: just three states — **needs review** (missed last
+  time), **learning** (answered correctly but not yet two correct answers in a row), and
+  **mastered** (two correct answers in a row). A single wrong answer immediately sends a
+  mastered word straight back to needs-review, requiring the streak to build up again from
+  zero. States update in real time with no manual confirmation or cleanup needed. **You see
+  the result immediately after every answer**: a wrong answer shows the correct spelling
+  and highlights exactly where you went wrong (letter-by-letter diff, see below); a correct
+  answer shows the word's updated state (learning / mastered) right there, without needing
+  to jump to the Learning Progress tab to see how far you've come.
+- **Fairness-aware review-time model for prioritizing review order**: the app fits a simple
+  linear regression of "word length vs. response time" across all of your timed answers, to
+  estimate "how long a word of this length is expected to take" (falling back to a plain
+  overall average when there isn't enough data — fewer than 8 timed words). Each word's
+  actual response time is then compared against *its own length-appropriate expected time*
+  — rather than against the overall average across all words, which would unfairly flag
+  long words as "slow / not mastered" just because they require typing more letters, and
+  unfairly flag short words as "well known" regardless of whether you actually remember
+  them. The Review tab's "sort by response time" option uses this same fairness-normalized
+  comparison, so it never degenerates into simply listing the longest words first.
+  Question selection within "needs review" / "learning" **is driven directly by the
+  prediction model, not by probability**: the most-prioritized words by prediction (new
+  words most likely to be missed, review words most likely to be answered correctly — see
+  Auto-Balance above) are guaranteed to be picked for the session; a lower-scoring word
+  never gets lucky and jumps ahead of a higher-scoring one by chance. Random tie-breaking
+  only kicks in when prediction scores are genuinely equal (e.g. no data yet to
+  differentiate two words), so truly indistinguishable words still rotate through — but
+  once scores differ, ranking always wins; it's never overturned by randomness. When
+  multiple levels are selected, each level's quota is allocated using the same Auto-Balance
+  ratio logic (see above), ensuring every level gets its fair share rather than being
+  crowded out entirely by a level whose words happen to score higher overall.
+- **Per-answer feedback with recorded mistakes**: when you answer incorrectly, the app
+  records exactly what you actually typed. Both the Review tab and the Learning Progress
+  tab display the correct spelling with the letters that differ from your input highlighted
+  (e.g. *wierd* vs. *weird*), so you can see your own common mistake patterns before your
+  next attempt.
+- **Next-question audio prefetching**: while you're listening to and answering the current
+  question, the app is already loading and decoding the next question's audio in the
+  background (re-prefetched again whenever Auto-Balance recomputes the ratio mid-session
+  and swaps in a different upcoming word), reducing playback delay when you move to the
+  next question.
+- **Chinese meanings**: every word includes its Chinese meaning with part of speech,
+  viewable both in per-answer feedback and in the end-of-session word list.
+- **Learning-progress dashboard**: an overview of how many words you've practiced /
+  mastered / are learning / need review, overall accuracy, mastery rate, recent accuracy,
+  and average response time, broken down by Level 4/5/6; also filterable by state or
+  keyword, with per-word detail (attempt count, current correct streak, response time,
+  recently typed wrong answers).
+- Freely selectable practice levels (4, 5, 6, multi-select), adjustable speech rate, and a
+  slider to set each session's practice duration.
+- **Local-only by default**: all learning records are stored in the browser's
+  `localStorage`. Refreshing or closing the tab does not lose progress (on the same
+  device/browser); older data formats are automatically migrated to the current format
+  without data loss.
+- **Cross-device sync (optional)**: automatically syncs learning records to your other
+  devices without manual export/import — see [Cross-Device Sync](#cross-device-sync) below.
 
-「學習進度」頁面裡有一個「🔄 跨裝置同步」區塊：在任一裝置按「建立新同步」會產生一組
-**同步密碼**，到其他裝置輸入同一組密碼「加入同步」，之後學習紀錄會
-自動同步到其他已加入的裝置：**每完成一回合測驗或複習就會同步一次**；回合時間拉得比較長
-時（例如 30 分鐘的測驗），不會等到整回合結束才同步——每答完 40 題就會強制同步一次，
-避免分頁意外關掉、裝置沒電時一次遺失一大段還沒上傳的進度。除此之外，畫面被實際碰一下、
-或重新整理／切回分頁也會檢查更新（同一台裝置的檢查最密集每 20 秒一次——刻意放寬過，
-長時間連續使用時累積的同步請求次數才不會太多）；按「開始測驗」的當下，題目一樣會照本機
-現有的資料立刻出現（手機鍵盤、發音都不會因為等網路而延遲），同時在背景抓一次最新進度——
-真的抓到其他裝置的更新時，只有「這回合還沒出到」的題目會換成新資料，已經看到／答過的
-題目完全不受影響。也可以隨時按「立即同步」手動觸發一次。
+## Review Modes — List View & Flip-Card Mode
 
-**開啟 App 時會自動重試**：如果剛開啟時剛好離線、或（尤其是「加到主畫面」安裝的版本）
-剛啟動那一刻分頁短暫被系統誤判成「不在前景」，第一次自動同步可能整個沒有真的執行——這
-種情況現在會在啟動後的 1.5、4、9 秒各再試一次，加上恢復網路連線時也會立刻自動重試一次，
-不用自己手動點「立即同步」才發現本機看起來是空的、其實資料一直都安全存在伺服器上。
+The **Review** tab splits **needs-review**, **learning**, and **bookmarked** words into
+three separate sub-tabs, showing only one category at a time for a cleaner view. This tab
+itself is **always** a searchable, sortable, paginated card list — needs-review cards show
+the correct spelling with a letter-by-letter diff of your mistake, learning cards show the
+current correct-answer streak — useful for quickly scanning or searching by keyword.
+Leaving and returning to the tab always shows this list view; it never gets stuck on
+another screen.
 
-**離線時同步會自動暫停，恢復連線後自動繼續**：整個 App（見下方〈加到主畫面與離線使用〉）
-在完全沒有網路的情況下也能正常測驗、複習、看學習進度——所有作答都照常存在本機
-`localStorage`，唯一暫停的只有跨裝置同步本身。離線的當下畫面會顯示「目前離線，同步已
-暫時停用」，讓你知道這是刻意暫停、不是壞掉；不會在背景一直嘗試連線失敗的請求，也不會
-跳出一堆錯誤訊息。恢復網路連線的瞬間會自動繼續同步、把離線期間累積的紀錄補上去，不需要
-自己按「立即同步」或重新整理頁面。
+**🎴 Flip-Card Review Mode** is a separate, independent mode (much like the main quiz mode,
+not a sub-screen of the Review tab): below the review list, choose whether to review
+**needs-review** or **learning** words and how many words to include (at least 20,
+customizable), then press "Start Flip-Card Review" to enter its own dedicated screen. It
+shows one word at a time in a larger font with larger buttons, suited to focused
+one-at-a-time memorization. Tapping a card plays its pronunciation and flips it to reveal
+the Chinese meaning (needs-review cards also show the mistake diff on the back). Swipe
+left/right (or use the ‹ › buttons) to move to the previous/next word; the next card's
+audio is prefetched the same way as in the quiz. Leaving mid-session via the "End" button
+in the top-right corner (or switching to another tab) triggers the same confirmation dialog
+as the main quiz, so progress is never silently discarded.
 
-**遇到伺服器流量限制時會自動退避**：長時間連續使用（例如連續練習一兩個小時）如果觸發了
-代理伺服器本身的請求頻率限制，畫面上會顯示「同步請求過於頻繁，N 秒後自動重試」，並且在
-這段冷卻時間內完全不再送出同步請求（下一次觸發到的限制會讓冷卻時間加倍，最長 10 分鐘），
-避免越限流、越重試、越限流的惡性循環；冷卻時間一到就會自動繼續同步，不需要手動介入，
-而且學習紀錄本來就一直安全地存在本機 `localStorage`，不會因為暫時同步不了而遺失。
+After finishing a full batch, a **"📝 Test these words"** button appears, which opens a
+real dictation quiz using **exactly the word set selected for that flip-card session**
+(reusing the same quiz engine and UI as the home screen). **Correct and incorrect answers
+here count toward your learning records and word states exactly like a normal quiz** —
+flip-card review itself is browsing only and doesn't count as an attempt, but testing
+yourself afterward through this button does: a correct answer increments the correct
+streak, which can genuinely move a word from "learning" to "mastered." This bridge back
+into the real quiz engine is the entire point of the review feature — if the test results
+didn't actually count, review would have no practical spaced-repetition value.
 
-這個功能沒有自己的伺服器：重用獨立的 [jaypengx-collab/shared-proxy](https://github.com/jaypengx-collab/shared-proxy)
-repo 已經部署好的 Cloudflare Worker（見該 repo 的 `worker.js`，`/vocab-sync` 路徑——
-這支 Worker 同時也服務姊妹專案 [Orbit](https://github.com/jaypengx-collab/Orbit) 自己
-的課表同步）當共用的伺服器端代理，存進獨立的 Firestore collection，不影響
-Orbit 自己的資料。跟 Orbit 自己的課表同步不同的地方：這裡沒有「管理者／僅接收」兩種
-身份，也沒有另一組較不敏感、可以公開分享的代碼——一組同步密碼永遠對應**同一個學習者
-自己的多台裝置**，沒有廣播給別人唯讀的情境，所以每台加入同步的裝置都能同時讀寫；讀取
-（不只寫入）也需要這組密碼才能成功，避免只是瞄到畫面、卻不知道密碼的人讀到別人的學習
-紀錄。伺服器端只存這組密碼的雜湊值，不存明文（見 shared-proxy 的 `worker.js` 裡
-`VOCAB_SYNC_APP` 與其 `singleCredential` 設計），即使 Firestore 資料外洩也推不回原始
-密碼；密碼長度也
-從早期版本的 8 碼加長到 16 碼（同一套字母表下約 80 bits 的熵），讓「只有一組密碼、
-沒有第二道防線」這件事本身仍然夠安全。
+## Cross-Device Sync
 
-上傳的內容特意壓到最小，避免浪費部署站台共用的免費額度：本機 `localStorage` 裡完整的
-學習紀錄格式（每個欄位都有名稱、時間是完整的毫秒時間戳記）先轉成只保留實際會用到的欄位、
-用固定順序陣列而非具名欄位、時間改存「離這次同步幾秒前」的精簡格式（見 `sync.js` 裡
-`compactProgressForSync` 的註解），每個單字最近幾次打錯的紀錄也裁到較短的長度（詳細的
-完整紀錄仍完整留在本機，不影響本機的複習清單顯示），最後才整包用 `gzip` 壓縮＋base64
-編碼上傳。實測（500 個混合各種情境的單字）光是這層精簡就讓壓縮後的體積再小上約
-80%；即使把全部 3,060 個單字都練過一輪的最壞情況估算，上傳體積也大約只有 40 KB 上下，
-遠低於 Cloudflare Worker 端設定的上限（見 shared-proxy 的 `worker.js` 裡
-`VOCAB_MAX_PAYLOAD_LENGTH`），對部署站台的 Firestore／Workers 用量影響很小。
+The Learning Progress tab has a **"🔄 Cross-Device Sync"** section: pressing "Create New
+Sync" on any device generates a **sync passcode**; entering that same passcode on another
+device and pressing "Join Sync" links the two. Once linked, learning records sync
+automatically:
 
-第一次「加入同步」會用共用的紀錄**取代**這台裝置目前的學習紀錄（會先自動備份這台裝置
-原本的紀錄，解除同步或整個刪除同步之後可以選擇找回）；「解除同步」只影響這台裝置本身，
-其他已加入的裝置不受影響；任何一台已加入的裝置都可以「整個刪除同步」讓所有裝置都斷開
-連結，此動作無法復原。
+- **Every completed quiz or review session triggers a sync.** For longer sessions (e.g. a
+  30-minute quiz), the app doesn't wait for the whole session to finish — a sync is forced
+  every **40 answered questions**, so a closed tab or a dead battery can't wipe out a large
+  chunk of unsynced progress.
+- Beyond that, an actual tap on the screen, a page refresh, or switching back to the tab
+  also checks for updates (throttled to at most once every **20 seconds** per device — a
+  deliberately relaxed interval so long continuous-use sessions don't accumulate an
+  excessive number of sync requests).
+- Pressing "Start Quiz" always shows questions immediately from local data (the phone
+  keyboard and audio playback are never delayed waiting on the network), while a background
+  fetch checks for newer progress; if newer data from another device is actually found,
+  **only the questions not yet shown in this session** get swapped for the updated data —
+  questions already seen or answered are never affected.
+- "Sync Now" is also available for a manual trigger at any time.
 
-**衝突處理**：不是單純比「哪一次存檔的時間比較晚」——存檔時間本來就不可靠（例如一台
-裝置離線很久、時鐘不準，或單純是這台裝置剛好比較晚才打開）。每次要上傳前，會先跟伺服器
-現有的紀錄比對兩邊「總作答次數」（每個單字的作答次數加總，不是練過的單字「種類數」——
-種類數練到全部 3,060 字就封頂了，同一個字複習再多次也不會再增加，總作答次數則不會，
-這也是唯一不會封頂、能一直反映「這份紀錄到底練習了多久」的數字）：伺服器的總作答次數
-比這台裝置多，就改成下載伺服器的最新紀錄，不會用這台裝置比較少的紀錄覆蓋過去；只有這台
-裝置的總作答次數大於或等於伺服器，才會真的上傳。「清除全部學習紀錄」會連同**解除這台
-裝置的同步**一起處理——清除後總作答次數會變成 0，若還留在同步狀態，下次自動同步一定會
-被判定為落後，伺服器上的舊紀錄反而會被抓回來，等於清除又被悄悄復原；解除同步就不會有
-這個問題：這台裝置直接退出同步，伺服器上的共用紀錄與其他已加入的裝置完全不受影響，之後
-要重新練習可以再用同一組密碼重新加入。
+**Automatic retry on app startup**: if the app happens to be offline right when it opens,
+or (especially for home-screen-installed instances) the tab is briefly misjudged by the
+system as "not in the foreground" at the moment of launch, the very first automatic sync
+attempt can silently fail to actually run. The app now retries at **1.5, 4, and 9 seconds**
+after startup, plus immediately again whenever network connectivity is restored — so you're
+never left thinking local data is empty when it's actually safely stored on the server; no
+manual "Sync Now" tap is needed to discover that.
 
-同樣的道理也套用在「學習進度」頁面手動「📥 匯入學習紀錄」：**裝置處於同步狀態時，
-匯入一份總作答次數比目前少的舊備份檔會直接被拒絕**，並顯示清楚的原因，而不是靜靜讓它
-匯入成功，卻在下一次自動同步時被伺服器上更完整的紀錄悄悄蓋回去（跟上面「清除全部學習
-紀錄」會被悄悄復原是同一種情況，只是換一個入口遇到）。如果真的確定要用這份舊備份取代
-目前的進度，訊息裡會提示先在上面「解除同步」，再重新匯入一次——解除同步後這台裝置的
-匯入就完全是本機自己的事，想匯入哪一份備份都可以，沒有任何限制；沒有設定同步的裝置
-本來就不受這個限制，匯入照常運作。
+**Offline handling — sync auto-pauses, then auto-resumes**: the entire app (see
+[Install to Home Screen & Offline Use](#install-to-home-screen--offline-use-pwa)) works
+fully offline for quizzes, review, and the progress dashboard — all answers are still saved
+to local `localStorage` as usual. The *only* thing that pauses is cross-device sync itself.
+While offline, the UI clearly shows "Currently offline, sync is temporarily disabled" so you
+know this is a deliberate pause, not a failure; the app does not keep retrying failed
+connection attempts in the background, and it does not surface a barrage of error messages.
+The instant connectivity is restored, syncing resumes automatically and catches up on
+whatever accumulated while offline — no manual "Sync Now" tap or page refresh required.
 
-自建 fork 若沒有部署站台的 `/vocab-sync` 代理（`PROXY_URL` 這個 GitHub Actions
-repository variable 留空），同步面板會顯示「跨裝置同步功能尚未設定」，不影響本機的
-其他功能。部署者的設定步驟：先照 [jaypengx-collab/shared-proxy](https://github.com/jaypengx-collab/shared-proxy)
-repo README 部署好那支 Worker（Firebase 專案、服務帳戶金鑰等完整步驟都在那份 README
-裡），複製 Worker 網址（**不要加路徑**——`/vocab-sync` 這個路徑是 `sync.js` 自己寫死
-補上的，設定值只需要 Worker 本身的網址），設進這個 repo 的 Settings → Secrets and
-variables → Actions → **Variables** → `PROXY_URL`（不是 Secret，這個值本來就會進
-公開前端程式碼；跟 Orbit 專案自己的 `PROXY_URL` 是同一個值，因為兩邊共用同一支
-Worker），推送到 `main` 後 `.github/workflows/pages.yml` 會在建置時把它寫進 `sync.js`。
+**Automatic backoff on rate limiting**: during long continuous-use sessions (e.g. one to two
+hours of practice in a row), if the shared proxy server's own request-rate limit is
+triggered, the UI shows "Sync requests too frequent, retrying automatically in N seconds"
+and stops sending sync requests entirely for that cooldown window (each subsequent rate
+limit doubles the cooldown, up to a **10-minute** cap), avoiding a rate-limit → retry →
+rate-limit feedback loop. Once the cooldown ends, syncing resumes automatically with no
+manual intervention needed — and since learning records always remain safely stored in
+local `localStorage` throughout, nothing is lost while sync is temporarily unavailable.
 
-## AI 學習功能
+**Security posture**: this feature has no dedicated backend of its own. It reuses the
+Cloudflare Worker already deployed by the standalone
+[jaypengx-collab/shared-proxy](https://github.com/jaypengx-collab/shared-proxy) repo (see
+that repo's `worker.js`, the `/vocab-sync` route — the same Worker also serves the sibling
+[Orbit](https://github.com/jaypengx-collab/Orbit) project's own schedule sync) as a shared
+server-side proxy, storing into a separate Firestore collection that doesn't touch Orbit's
+own data. Unlike Orbit's schedule sync, there is no "admin / receive-only" role split and no
+separate, less-sensitive code meant for public sharing here — a single sync passcode always
+corresponds to **the same learner's own multiple devices**, with no read-only broadcast
+scenario, so every device that has joined a sync can both read and write. Reads (not just
+writes) also require the passcode to succeed, preventing someone who merely glimpses the
+screen — without knowing the passcode — from reading someone else's learning records. The
+server only stores a **hash of the passcode**, never the plaintext (see shared-proxy's
+`worker.js`, the `VOCAB_SYNC_APP` config and its `singleCredential` design) — so even a
+Firestore data leak can't be reversed back into the original passcode. The passcode length
+was also increased from an earlier 8 characters to **16 characters** (roughly 80 bits of
+entropy over the same alphabet), keeping the "single passcode, no second factor" model
+adequately secure.
 
-選用功能，跟跨裝置同步一樣重用 [jaypengx-collab/shared-proxy](https://github.com/jaypengx-collab/shared-proxy)
-已經部署好的 Cloudflare Worker（見該 repo 的 `worker.js`，`/vocab-ai` 路徑），不需要
-自己的 Firebase 專案，也不需要額外申請或設定任何 Secret——只要上面
-〈跨裝置同步〉已經設定好 `PROXY_URL`，這個功能就會自動可用（`PROXY_URL` 留空時，
-下面這個入口會直接消失，不會出現按了會失敗的死按鈕）：
+**Payload compaction**: uploaded data is deliberately minimized, to avoid wasting the
+deployment site's shared free-tier quota. The full `localStorage` learning-record format
+(named fields, full millisecond timestamps) is first converted to only the fields actually
+needed, using fixed-order arrays instead of named fields, with timestamps stored as
+"seconds before this sync" rather than absolute time (see the comments on
+`compactProgressForSync` in `sync.js`); each word's recent wrong-answer history is also
+trimmed to a shorter length (the full, untrimmed history stays intact locally and is
+unaffected — it's only the sync payload that's trimmed). The compacted payload is then
+`gzip`-compressed and base64-encoded before upload. In testing (500 words across a mix of
+realistic scenarios), this compaction step alone reduced the compressed payload size by
+roughly **80%**; even in the worst case of having practiced all 3,060 words once, the
+estimated upload size is only around **40 KB**, well under the cap configured on the
+Cloudflare Worker side (see `VOCAB_MAX_PAYLOAD_LENGTH` in shared-proxy's `worker.js`),
+keeping impact on the deployment site's Firestore/Workers usage low.
 
-- **🪄 AI 記憶法**（「複習」頁面〈答錯待複習〉列表，只出現在有實際答錯紀錄的單字卡片）：
-  依這個單字「你自己實際打錯過的拼法」（`recentWrongAnswers`），請 AI 針對那個錯誤模式
-  產生一個專屬的記憶提示——跟同一張卡片上、答錯當下就會顯示的靜態提示（`data/
-  ai_signals.json`，`scripts/generate_ai_signals.py` 建置時離線產生，每個單字全體使用者
-  看到的都一樣）是兩個獨立的東西：這裡是即時呼叫，看的是「你」這個學習者自己的錯誤紀錄。
-  按一次才會產生一次（不會自動觸發），生成中會顯示「生成中…」，失敗會顯示清楚的原因
-  （例如請求過於頻繁）。
+The first time you "Join Sync," the shared record **replaces** the current device's
+learning records (the device's original records are automatically backed up first, and can
+optionally be restored after leaving or fully deleting the sync). "Leave Sync" only affects
+the current device — other joined devices are unaffected. Any joined device can "Delete
+Entire Sync," disconnecting all devices from it; this action cannot be undone.
 
-純文字生成，不會碰到 `/vocab-sync` 的 Firestore 資料，也不需要知道你有沒有設定
-跨裝置同步；沒有同步、純本機使用的裝置一樣能用。實作見 `vocab-ai.js`（只負責呼叫 Worker，
-沒有自己的畫面）與 `app.js` 裡呼叫它的按鈕邏輯。
+**Conflict resolution**: rather than simply comparing "which save happened more recently" —
+save timestamps aren't reliable (a device could have been offline a long time, have an
+inaccurate clock, or simply have been opened later than another). Before every upload, the
+app compares **total attempt count** between this device and the server's current record
+(the sum of attempts across every word, *not* the number of distinct words practiced —
+distinct-word count caps out once all 3,060 words have been practiced at least once, and
+practicing the same word again and again doesn't move that number further; total attempt
+count never caps, making it the only number that keeps reflecting "how much total practice
+has actually gone into this record"). If the server's total attempt count is higher, the
+app downloads the server's newer record instead of overwriting it with this device's
+smaller one; only if this device's total attempt count is greater than or equal to the
+server's does an upload actually happen. "Clear All Learning Records" is bundled together
+with **leaving sync on this device**: clearing would otherwise reset the total attempt
+count to 0, and if the device stayed in sync, the very next automatic sync would be judged
+as "behind" and silently pull the server's old record back down — effectively undoing the
+clear. Leaving sync avoids this: the device simply exits the sync group, leaving the
+server's shared record and every other joined device completely untouched; you can rejoin
+later with the same passcode to resume.
 
-## 架構
+The same logic applies to the manual **"📥 Import Learning Records"** action on the Learning
+Progress tab: **while a device is in sync, importing an older backup file with a lower
+total attempt count than the current record is rejected outright**, with a clear
+explanation — rather than silently succeeding and then getting silently overwritten by the
+server's more complete record on the next automatic sync (the same underlying scenario as
+the "Clear All" case above, just reached through a different entry point). If you're
+genuinely certain you want to replace current progress with that older backup, the message
+suggests leaving sync first and then re-importing — once out of sync, importing is purely a
+local-device operation with no restrictions on which backup you choose. Devices that were
+never set up for sync are unaffected by this restriction and import normally.
 
-- `logic.js`：不依賴 DOM、可獨立單元測試的核心邏輯——單字狀態判斷、依「單字長度 vs.
-  反應時間」迴歸模型排序的複習優先度（`computeResponseTimeBaseline`／
-  `relativeResponseTime`，取代單純跟一個固定整體平均比較）、`selectQuestions` 的比例式
-  選題（新字／答錯待複習／學習中，任意比例組合）、`computeAutoBalanceRatio` 依目前各
-  類單字數量即時算出「自動平衡」模式的出題比例、進度統計、資料格式轉換（migration）。
-- `app.js`：畫面渲染、事件處理、`localStorage` 讀寫、語音播放（含 Web Audio API 的
-  `AudioContext` 管理、逾時自動退回瀏覽器語音合成、與下一題音檔的提前載入，見下方
-  〈單字發音〉）、四種測驗模式與自動平衡模式的即時回合中重算（`rebalanceAutoModeTail`）、
-  複習分頁的列表視圖與獨立的卡片複習模式（含滑動手勢，Pointer Events）、
-  `showConfirmDialog` 自訂確認彈窗（取代 `window.confirm()`），呼叫 `logic.js` 提供的
-  函式；也透過 `window.VocabState` 把 `progressStore`／`settings` 開放給 `sync.js` 讀寫，
-  透過 `window.VocabUI` 把確認彈窗開放給 `sync.js` 使用。
-- `sync.js`：跨裝置同步——透過 Orbit 的 Cloudflare Worker 代理讀寫、節流輪詢、開啟 App
-  時的自動重試、遇到伺服器端流量限制（HTTP 429）時的自動退避重試（見上方〈跨裝置同步〉）。
-- `vocab-ai.js`：個人化記憶法——透過同一支 Cloudflare Worker 呼叫即時 Gemini
-  功能（見上方〈AI 學習功能〉），沒有自己的畫面，只被 `app.js` 的按鈕邏輯呼叫。
-- `sw.js`：Service Worker，讓「加到主畫面」可以離線使用，見下方〈加到主畫面與離線使用〉。
-- `manifest.json`／`icons/`：PWA 設定檔與圖示，同樣見下方。
-- `tests/logic.test.js`：50 個測試，涵蓋作答紀錄、狀態判斷（含連續答對重置）、依單字
-  長度公平比較的反應時間優先度、選題比例與備援（含只挑單一類別、某類別比例為 0% 時絕不
-  當備援）、自動平衡模式的出題比例計算、打錯答案記錄、資料轉換等情境，執行方式：
-  `npm test`（需要 Node.js）。
+**Deploying your own fork**: if the deployment site has no `/vocab-sync` proxy configured
+(the `PROXY_URL` GitHub Actions repository variable is left blank), the sync panel shows
+"Cross-device sync is not configured yet," with no effect on any other local functionality.
+Deployer setup steps: deploy the Worker following the
+[jaypengx-collab/shared-proxy](https://github.com/jaypengx-collab/shared-proxy) repo's
+README (full steps for the Firebase project, service account key, etc. are documented
+there), copy the Worker's URL (**without a path suffix** — `/vocab-sync` is appended by
+`sync.js` itself; the configured value should be just the Worker's base URL), and set it in
+this repo's **Settings → Secrets and variables → Actions → Variables → `PROXY_URL`** (a
+Variable, not a Secret, since this value is meant to end up in the public front-end code
+anyway — it's the same value used by the Orbit project, since both share the same Worker).
+After pushing to `main`, `.github/workflows/pages.yml` writes it into `sync.js` at build
+time.
 
-## 加到主畫面與離線使用
+## AI Mnemonic Generation
 
-手機瀏覽器（iOS Safari「加入主畫面」、Android Chrome「安裝應用程式」／「加到主畫面」）都
-可以把英單力加成一個獨立圖示，開啟後跟原生 App 一樣全螢幕顯示、沒有網址列。桌機瀏覽器
-（Chrome／Edge）網址列右側也會出現安裝圖示，效果相同。
+An optional feature that, like cross-device sync, reuses the Cloudflare Worker already
+deployed in [jaypengx-collab/shared-proxy](https://github.com/jaypengx-collab/shared-proxy)
+(see that repo's `worker.js`, the `/vocab-ai` route). It requires no Firebase project of its
+own and no additional secrets — as long as `PROXY_URL` is already configured for
+[Cross-Device Sync](#cross-device-sync), this feature becomes available automatically (when
+`PROXY_URL` is unset, the entry point simply doesn't appear, rather than showing a button
+that would fail if pressed):
 
-背後是標準的 PWA 三件套：`manifest.json` 提供名稱、圖示與啟動設定；`icons/` 底下的
-`icon-192.png`／`icon-512.png`（給 Android／桌機）與 `apple-touch-icon.png`（給
-iOS，180×180、不帶圓角——iOS 會自己套用遮罩，預先切好圓角反而會跟系統的遮罩疊在一起
-變形）；`sw.js` 則是 Service Worker，讓已經載入過的頁面殼（`index.html`／`style.css`／
-`app.js`／`logic.js`／`sync.js`／`data/vocab.json`）跟全部單字音檔都能離線使用——
-App 一啟動就會在背景自動把全部 3,060 個單字的音檔都下載並存進 Cache Storage（不需要
-手動操作，也沒有可以關掉的選項），見下方〈單字發音〉。
+- **🪄 AI Mnemonic** (on the "needs-review" list in the Review tab, shown only on cards with
+  an actual recorded wrong answer): based on the word's **own recorded wrong spellings you
+  actually typed** (`recentWrongAnswers`), an AI generates a mnemonic hint tailored to that
+  specific mistake pattern. This is a distinct feature from the static hint shown on the
+  same card at the moment you get an answer wrong (`data/ai_signals.json`, generated offline
+  at build time by `scripts/generate_ai_signals.py`, identical for every user viewing that
+  word) — this one is a live, on-demand call that looks specifically at **your own** mistake
+  history as a learner. It only generates once per button press (no automatic triggering),
+  shows "Generating…" while in progress, and shows a clear error message on failure (e.g.
+  too many requests).
 
-`sw.js` 對 HTML 本身一律「先試網路」，只有網路真的失敗或逾時（4 秒）才退回快取版本，所以
-正常情況下不會卡在舊版本；「學習進度」頁面最下面的「🔄 檢查更新」按鈕偵測到新版本時，也
-會一併清掉 Service Worker 的快取再重新整理，避免更新後又載到快取住的舊檔案。
+This is a purely text-generation feature — it never touches the `/vocab-sync` Firestore
+data, and doesn't need to know whether you've set up cross-device sync at all; devices used
+purely locally, without sync, can use it just the same. Implementation lives in
+`vocab-ai.js` (Worker-calling logic only, no UI of its own) and the button-handling logic
+that invokes it in `app.js`.
 
-**第一次連網開啟過之後，整個 App 就能完全離線使用**：單字測驗、複習、卡片複習模式、
-學習進度，全部都只靠本機的 `localStorage` 跟上面這套快取，不需要即時連網才能運作；
-唯一會暫停的是跨裝置同步（見上方〈跨裝置同步〉），而且會清楚顯示「已暫停」而不是卡住
-或報錯。萬一真的在某個環節（例如單字資料本身）讀取失敗，畫面最上方會出現一條清楚的
-錯誤訊息附「重新整理」按鈕，而且一偵測到網路恢復就會自動重新整理，不會留下一片空白、
-不知道發生什麼事的畫面。
+## Architecture
 
-## 單字發音
+- **`logic.js`** — DOM-independent, unit-testable core logic: word-state determination;
+  review-priority ranking driven by the word-length-vs-response-time regression model
+  (`computeResponseTimeBaseline` / `relativeResponseTime`, replacing a simple comparison
+  against one fixed overall average); `selectQuestions`'s ratio-based question selection
+  (new / needs-review / learning, in any ratio combination); `computeAutoBalanceRatio`,
+  which computes the Auto-Balance mode's live question ratio from current word-state
+  counts; progress statistics; and data-format migration.
+- **`app.js`** — screen rendering, event handling, `localStorage` read/write, audio
+  playback (including Web Audio API `AudioContext` management, automatic fallback to
+  browser speech synthesis on timeout, and next-question audio prefetching — see
+  [Word Pronunciation](#word-pronunciation)); the four quiz modes plus Auto-Balance's live
+  mid-session recomputation (`rebalanceAutoModeTail`); the Review tab's list view and the
+  independent flip-card review mode (including swipe gestures via Pointer Events);
+  `showConfirmDialog`, a custom confirmation dialog replacing `window.confirm()`; calls into
+  the functions exposed by `logic.js`; and exposes `progressStore`/`settings` to `sync.js`
+  via `window.VocabState`, plus the confirmation dialog to `sync.js` via `window.VocabUI`.
+- **`sync.js`** — cross-device sync: reads and writes through the shared Cloudflare Worker
+  proxy, throttled polling, automatic retry on app startup, and automatic backoff-and-retry
+  on server-side rate limiting (HTTP 429) — see [Cross-Device Sync](#cross-device-sync).
+- **`vocab-ai.js`** — personalized mnemonic generation: calls a live Gemini-backed function
+  through the same Cloudflare Worker (see [AI Mnemonic Generation](#ai-mnemonic-generation)).
+  Has no UI of its own; invoked only by button logic in `app.js`.
+- **`sw.js`** — the Service Worker enabling offline use once the app is added to the home
+  screen — see [Install to Home Screen & Offline Use](#install-to-home-screen--offline-use-pwa).
+- **`manifest.json` / `icons/`** — PWA manifest and icon assets, also covered below.
+- **`tests/logic.test.js`** — 50 tests covering: attempt recording; state determination
+  (including correct-streak reset on a wrong answer); length-normalized, fairness-aware
+  response-time priority; question-selection ratios and fallback behavior (including
+  single-category selection and the rule that a 0%-ratio category is never used as a
+  fallback); Auto-Balance ratio computation; wrong-answer recording; and data-format
+  migration. Run with `npm test` (requires Node.js).
 
-瀏覽器內建的語音合成（Web Speech API）音質好壞完全取決於使用者的作業系統/瀏覽器裝了
-哪些語音，常常很機械、不同裝置聽起來也不一致。因此每個單字的發音都改成**事先錄製**：
-用開源工具 [`edge-tts`](https://github.com/rany2/edge-tts)（呼叫 Microsoft Edge
-線上語音服務的神經網路語音，不需要 API 金鑰）為全部 3,060 個單字各產生一個 mp3 檔，
-存在 `data/audio/<單字小寫>.mp3`，網頁直接播放這些檔案；只有在檔案載入失敗時（例如
-之後新增單字但還沒重新產生音檔）才會退回使用瀏覽器的語音合成。
+## Install to Home Screen & Offline Use (PWA)
 
-播放本身用的是 Web Audio API（`AudioContext` + `AudioBufferSourceNode`），不是
-`<audio>` 元素——原因見 `app.js` 裡的註解（避免觸發 iOS 的「現正播放」通知）。iOS
-Safari 的「加到主畫面」PWA 被切到背景（例如滑掉、切換到別的 App）之後，`AudioContext`
-有時會被系統整個「關閉」以釋放音訊資源（這種情況 `state` 會誠實地變成 `"closed"`，
-之後永遠無法再 `resume()`）；但更麻煩、也更難抓的是另一種情況——有時系統只是讓它
-「卡住」，`state` 還是回報普通的 `"suspended"`，看起來隨時可以 `resume()`，實際上
-永遠不會真的恢復，而且**發生與否不固定**，感覺跟背景多久、同時切了幾個其他 App 有關。
-因為沒辦法單純從 `state` 判斷後者，`app.js` 改成只要偵測到分頁曾經被切到背景過
-（`visibilitychange`／`pagehide`），下一次真的播放音效時就直接整個丟掉舊的
-`AudioContext`、建一個全新的，不管舊的當下回報的 `state` 是什麼——不賭它這次會不會
-真的恢復。所以回到頁面後按播放/重播就能正常出聲，不需要重新整理。
+On mobile browsers (iOS Safari's "Add to Home Screen," Android Chrome's "Install app" /
+"Add to Home Screen"), YingDanLi can be installed as a standalone icon that opens full
+screen with no address bar, just like a native app. Desktop browsers (Chrome/Edge) show an
+install icon in the address bar with the same effect.
 
-聽目前這一題（或卡片複習模式的這一張卡片）的同時，系統已經在背景把下一題／下一張
-卡片的音檔提前載入並解碼好，換題時通常不需要再等網路／解碼，能明顯減少聽到聲音前的延遲。
-音檔下載本身也設有逾時（3 秒）：網路狀況不好時不會無限期卡住等待，逾時就會直接退回瀏覽器
-內建的語音合成，避免長時間沒有聲音。
+Under the hood this is a standard three-part PWA setup: `manifest.json` supplies the name,
+icons, and launch configuration; `icons/` contains `icon-192.png` / `icon-512.png` (for
+Android/desktop) and `apple-touch-icon.png` (for iOS, 180×180, without pre-rounded corners
+— iOS applies its own mask, and pre-rounding the corners would visually conflict with that
+system mask); and `sw.js` is the Service Worker that lets the already-loaded app shell
+(`index.html` / `style.css` / `app.js` / `logic.js` / `sync.js` / `data/vocab.json`) and all
+word audio files work offline. On startup, the app automatically begins downloading and
+caching all **3,060** word audio files into Cache Storage in the background (no manual
+action, no way to opt out — see [Word Pronunciation](#word-pronunciation)).
 
-**為什麼網路不好時發音會變慢／變差**：每個字的發音播放時都得先跟伺服器要那個字的 mp3
-檔案，拿到之後才能播；拿到過一次之後，瀏覽器就會把它存進本機的 Cache Storage（見上方
-〈加到主畫面與離線使用〉），下一次不管網路好不好都是直接從裝置本身讀取，不會再受網路
-影響。網路不好時真正會被拖慢的，只有「這台裝置還沒快取過的字」——抓這種字的發音本來就
-比較久，逾時（3 秒）之後還會直接退回音質較差的瀏覽器語音合成。
+`sw.js` uses a **"network first" policy for HTML**: it only falls back to the cached version
+if the network request genuinely fails or times out (**4 seconds**), so the app normally
+never gets stuck on a stale version. The Learning Progress tab's "🔄 Check for Updates"
+button, when it detects a new version, also clears the Service Worker's cache and reloads,
+avoiding a scenario where a freshly-updated app still loads stale cached files.
 
-**這個問題現在會自動解決，不需要手動操作，畫面上也完全看不到這件事在發生**：App 一啟動
-就會在背景把全部 3,060 個字的發音（約 30 MB，用實際測得的平均每個字約 9.8 KB 換算）
-自動下載並存進跟上面同一個 Cache Storage，沒有按鈕、沒有選項、也沒有另外佔畫面空間的
-狀態列——下載完之後每一個字都已經「快取過」了，不管在哪裡、網路好不好、甚至完全離線，
-發音都會直接從裝置本身秒開，不會再有任何網路延遲或音質下降的問題。已經下載過的字會自動
-跳過（不會重複耗用流量），如果啟動當下沒有網路，恢復連線後也會自動繼續下載，不需要重新
-整理或做任何操作。
+**Once opened online for the first time, the entire app works fully offline**: quizzes,
+review, flip-card review mode, and the progress dashboard all rely only on local
+`localStorage` and this caching layer, with no live network requirement. The only thing that
+pauses is cross-device sync (see [Cross-Device Sync](#cross-device-sync)), and it clearly
+shows a "paused" state rather than hanging or failing silently. If something does fail to
+load (e.g. the vocabulary data itself), a clear error banner appears at the top of the
+screen with a "Reload" button, and the app automatically reloads as soon as it detects
+connectivity has returned — avoiding a blank, confusing screen.
 
-因為每個發音檔都很小（平均約 10 KB），真正拖慢下載速度的其實是「幾千個小檔案各自要一趟
-來回」而不是總資料量本身，所以下載時會**同時**發出多個請求（而不是一個一個排隊等），
-才能真的在幾秒到十幾秒內（依網路狀況）下載完全部 3,060 個檔案，而不是被每個請求各自的
-延遲拖成一兩分鐘。
+## Word Pronunciation
 
-重新產生音檔（例如換了語音、或 `data/vocab.json` 增加了新單字）：
+The browser's built-in speech synthesis (Web Speech API) has audio quality entirely
+dependent on which voices happen to be installed on the user's OS/browser — often robotic,
+and inconsistent across devices. To avoid this, every word's pronunciation is instead
+**pre-recorded**: the open-source tool [`edge-tts`](https://github.com/rany2/edge-tts)
+(calling Microsoft Edge's online neural text-to-speech service, no API key required)
+generates one MP3 per word for all **3,060** words, stored at
+`data/audio/<lowercase-word>.mp3`, and the web page plays these files directly. The app
+falls back to browser speech synthesis only if an audio file fails to load (e.g. a newly
+added word whose audio hasn't been generated yet).
+
+**Why Web Audio API instead of `<audio>`**: playback uses the Web Audio API
+(`AudioContext` + `AudioBufferSourceNode`) rather than an `<audio>` element — see the
+comment in `app.js` for the reasoning (avoiding triggering iOS's "Now Playing" media
+notification).
+
+**The iOS Safari `AudioContext` suspend/close bug and its fix**: when an iOS Safari
+home-screen PWA is backgrounded (swiped away, or another app is switched to), the
+`AudioContext` is sometimes entirely **closed** by the system to reclaim audio resources —
+in that case `state` honestly becomes `"closed"` and can never be `resume()`-d again. More
+troublesome, and harder to detect, is a second failure mode: sometimes the system merely
+leaves the context **stuck**, with `state` still reporting the normal `"suspended"` value
+that looks resumable — but it never actually recovers, and **whether this happens at all is
+inconsistent**, seemingly related to how long the app was backgrounded and how many other
+apps were switched between in the meantime. Since there's no reliable way to distinguish
+this stuck case from `state` alone, `app.js`'s fix is: as soon as the tab is detected to
+have been backgrounded at any point (via `visibilitychange` / `pagehide`), the next actual
+playback attempt discards the old `AudioContext` entirely and creates a brand-new one,
+regardless of what `state` the old one currently reports — rather than gambling on whether
+it will actually resume. As a result, pressing play/replay after returning to the page works
+reliably without needing a page reload.
+
+**Prefetching**: while you're listening to the current question (or the current flip card),
+the app is already fetching and decoding the audio for the next question/card in the
+background, so switching questions typically doesn't require waiting on the network or
+decoding again, meaningfully reducing the delay before sound plays. Audio downloads also
+have their own timeout (**3 seconds**): under poor network conditions, playback doesn't hang
+indefinitely — on timeout it falls back directly to the browser's built-in speech synthesis
+to avoid long stretches of silence.
+
+**Why pronunciation can be slow or lower-quality on a poor connection**: playing any given
+word's pronunciation first requires fetching that word's MP3 from the server before it can
+play. Once fetched, the browser stores it in local Cache Storage (see
+[Install to Home Screen & Offline Use](#install-to-home-screen--offline-use-pwa)), so every
+subsequent playback — regardless of network conditions — reads directly from the device and
+is unaffected by the network. The only thing a poor connection actually slows down is
+**words this device hasn't cached yet** — fetching those genuinely takes longer, and after
+the 3-second timeout they fall back directly to the lower-quality browser speech synthesis.
+
+**Background pre-caching of all 3,060 audio files on startup**: this problem is now solved
+automatically, with no manual action required and nothing visible happening on screen. On
+startup, the app begins downloading all **3,060** words' pronunciation audio (roughly
+**30 MB total**, based on a measured average of about **9.8 KB per word**) in the
+background into the same Cache Storage described above — no button, no toggle, no status
+indicator taking up screen space. Once downloaded, every word is already "cached": no
+matter where you are, regardless of network quality, or even fully offline, pronunciation
+plays instantly from the device with no network delay or quality degradation. Already-cached
+words are automatically skipped (no redundant bandwidth use), and if there's no network at
+startup, downloading automatically resumes once connectivity returns — no reload or manual
+action needed.
+
+Because each audio file is tiny (about 10 KB on average), what actually slows the download
+down is the **round-trip overhead of thousands of small individual requests**, not the total
+data volume — so downloads fire **multiple requests concurrently** (rather than queuing them
+one at a time), which is what makes it possible to download all 3,060 files in a matter of
+seconds to roughly ten-odd seconds (depending on network conditions) instead of being
+stretched to one or two minutes by per-request latency.
+
+**Regenerating audio** (e.g. after a voice change, or after new words are added to
+`data/vocab.json`):
 
 ```bash
 pip install edge-tts
-python3 scripts/generate_audio.py        # 已存在的檔案會自動略過，可安全中斷重跑
+python3 scripts/generate_audio.py        # already-existing files are skipped automatically; safe to interrupt and re-run
 ```
 
-（大考中心公布的詞彙表本身只有文字，並未附官方發音音檔——市面上的單字 App
-多半也是自行外包錄音或使用 TTS，因此這裡選擇免費、可重現產出的 TTS 方案。）
+(The official College Entrance Examination Center vocabulary list is text-only and does not
+come with official pronunciation audio — most commercial vocabulary apps also either
+outsource recording or use TTS, which is why this project uses a free, reproducible TTS
+pipeline.)
 
-## 使用方式
+## Getting Started
 
-直接開啟 [線上網址](https://jaypengx-collab.github.io/Orbit-Vocab/) 即可，無需登入、
-無需安裝任何東西。建議使用 Chrome、Edge 或 Safari 以獲得較自然的英文語音。
+### Online use
 
-## 本機開發
+Just open the [live site](https://jaypengx-collab.github.io/Orbit-Vocab/) — no login, no
+installation required. Chrome, Edge, or Safari are recommended for the most natural-sounding
+speech.
 
-因為頁面用 `fetch` 讀取 `data/vocab.json`，直接用瀏覽器開啟 `index.html`（`file://`）會被
-瀏覽器的 CORS 規則擋下，請用簡單的本機伺服器啟動，例如：
+### Local development
+
+Because the page uses `fetch` to load `data/vocab.json`, opening `index.html` directly in a
+browser (`file://`) will be blocked by CORS rules. Run a simple local server instead, for
+example:
 
 ```bash
 python3 -m http.server 8000
-# 然後開啟 http://localhost:8000
+# then open http://localhost:8000
 ```
 
-執行測試（需要 Node.js 18+）：
+### Running tests
+
+Requires Node.js 18+:
 
 ```bash
 npm test
 ```
 
-## 資料來源
+## Data Sources
 
-單字、詞性資料整理自大學入學考試中心公布之《高中英文參考詞彙表》（108 課綱），
-Level 4–6 共 3,060 字；中文意思取自開源英漢字典 [ECDICT](https://github.com/skywind3000/ECDICT)，
-並轉換為繁體中文。
+Vocabulary and part-of-speech data is compiled from the College Entrance Examination
+Center's (大考中心) official **"High School English Reference Vocabulary List"** (108
+curriculum), Levels 4–6, totaling 3,060 words. Chinese meanings are sourced from the
+open-source English-Chinese dictionary [ECDICT](https://github.com/skywind3000/ECDICT) and
+converted to Traditional Chinese.
 
-## 部署
+## Deployment
 
-已附上 `.github/workflows/pages.yml`，推送到 `main` 分支後會自動建置並部署到 GitHub Pages
-（需在 repository 的 Settings → Pages 將 Source 設為 "GitHub Actions"）。
+A `.github/workflows/pages.yml` workflow is included. Pushing to the `main` branch
+automatically builds and deploys the site to GitHub Pages (requires setting the repository's
+**Settings → Pages → Source** to "GitHub Actions").
+
+## Related Projects
+
+- [jaypengx-collab/Shared-Proxy](https://github.com/jaypengx-collab/Shared-Proxy) — the
+  shared Cloudflare Worker backend that powers cross-device sync and AI mnemonic generation
+  for this project.
+- [jaypengx-collab/Orbit](https://github.com/jaypengx-collab/Orbit) and
+  [jaypengx-collab/Match-Find](https://github.com/jaypengx-collab/Match-Find) — sibling
+  sites that share the same Worker infrastructure.
+
+---
+
+**Live site: [jaypengx-collab.github.io/Orbit-Vocab](https://jaypengx-collab.github.io/Orbit-Vocab/)**
