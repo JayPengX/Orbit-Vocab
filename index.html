@@ -31,12 +31,13 @@
 </head>
 <body>
 <header class="topbar">
-  <h1>🔊 英單力 <span class="muted">高中英文單字 Level 4–6</span></h1>
+  <h1>🔊 <span data-i18n="app.title">英單力</span> <span class="muted" data-i18n="app.subtitle">高中英文單字 Level 4–6</span></h1>
   <nav class="tabs" id="tabs">
-    <button class="tab-btn active" data-view="home">首頁</button>
-    <button class="tab-btn" data-view="reviewlist">複習</button>
-    <button class="tab-btn" data-view="progress">學習進度</button>
+    <button class="tab-btn active" data-view="home" data-i18n="tabs.home">首頁</button>
+    <button class="tab-btn" data-view="reviewlist" data-i18n="tabs.review">複習</button>
+    <button class="tab-btn" data-view="progress" data-i18n="tabs.progress">學習進度</button>
   </nav>
+  <select id="language-select" class="language-select" aria-label="Language"></select>
 </header>
 
 <main id="app">
@@ -44,85 +45,85 @@
   <!-- HOME / SETUP -->
   <section id="view-home" class="view active">
     <div class="card">
-      <h2>語速設定</h2>
+      <h2 data-i18n="home.rateTitle">語速設定</h2>
       <div class="row">
-        <label for="rate-select">語速</label>
+        <label for="rate-select" data-i18n="home.rateLabel">語速</label>
         <input type="range" id="rate-select" min="0.5" max="1.3" step="0.1" value="0.9">
         <span id="rate-value">0.9x</span>
       </div>
       <div class="row">
-        <button id="test-voice-btn" class="btn secondary">🔊 試聽目前語速</button>
+        <button id="test-voice-btn" class="btn secondary" data-i18n="home.previewRateBtn">🔊 試聽目前語速</button>
         <span class="hint" id="test-voice-word"></span>
       </div>
 
-      <h2>練習時間</h2>
+      <h2 data-i18n="home.durationTitle">練習時間</h2>
       <div class="row">
-        <label for="test-minutes">時間長度</label>
+        <label for="test-minutes" data-i18n="home.durationLabel">時間長度</label>
         <input type="range" id="test-minutes" min="2" max="30" step="1" value="10" />
         <span id="test-minutes-value">10 分鐘</span>
       </div>
       <div class="row" id="test-minutes-presets">
         <button type="button" class="btn secondary small" data-minutes="5">5</button>
-        <button type="button" class="btn secondary small" data-minutes="10">10（建議）</button>
+        <button type="button" class="btn secondary small" data-minutes="10" data-i18n="home.minutesRecommended">10（建議）</button>
         <button type="button" class="btn secondary small" data-minutes="15">15</button>
         <button type="button" class="btn secondary small" data-minutes="20">20</button>
         <button type="button" class="btn secondary small" data-minutes="30">30</button>
       </div>
-      <p class="hint">時間到會自動結束並顯示成績，不用自己抓題數。</p>
+      <p class="hint" data-i18n="home.durationHint">時間到會自動結束並顯示成績，不用自己抓題數。</p>
 
-      <h2>測驗模式</h2>
-      <p class="hint">選擇這回合怎麼出題。已熟記的單字不會出現。</p>
+      <h2 data-i18n="home.modeTitle">測驗模式</h2>
+      <p class="hint" data-i18n="home.modeHint">選擇這回合怎麼出題。已熟記的單字不會出現。</p>
       <div class="mode-picker" id="mode-picker">
         <label class="mode-chip">
           <input type="radio" name="test-mode" value="auto" checked>
-          <span>⚖️ 自動平衡（預設）</span>
-          <small>依你目前的學習狀況自動調整。</small>
+          <span data-i18n="home.modeAutoLabel">⚖️ 自動平衡（預設）</span>
+          <small data-i18n="home.modeAutoDesc">依你目前的學習狀況自動調整。</small>
         </label>
         <label class="mode-chip">
           <input type="radio" name="test-mode" value="new">
-          <span>🆕 新字優先</span>
-          <small>大部分出新字，少量複習。</small>
+          <span data-i18n="home.modeNewLabel">🆕 新字優先</span>
+          <small data-i18n="home.modeNewDesc">大部分出新字，少量複習。</small>
         </label>
         <label class="mode-chip">
           <input type="radio" name="test-mode" value="review">
-          <span>🔁 只複習</span>
-          <small>只複習舊字，不出新字。</small>
+          <span data-i18n="home.modeReviewLabel">🔁 只複習</span>
+          <small data-i18n="home.modeReviewDesc">只複習舊字，不出新字。</small>
         </label>
         <label class="mode-chip">
           <input type="radio" name="test-mode" value="advanced">
-          <span>🛠️ 進階：自訂比例</span>
-          <small>自己設定出題比例。</small>
+          <span data-i18n="home.modeAdvancedLabel">🛠️ 進階：自訂比例</span>
+          <small data-i18n="home.modeAdvancedDesc">自己設定出題比例。</small>
         </label>
       </div>
       <p class="hint" id="auto-ratio-hint"></p>
 
       <div id="ratio-advanced-panel" class="hidden">
-        <p class="hint">拖曳滑桿調整新字、答錯待複習、學習中各佔的比例。</p>
+        <p class="hint" data-i18n="home.ratioHint">拖曳滑桿調整新字、答錯待複習、學習中各佔的比例。</p>
         <div class="row">
-          <label for="ratio-new">🆕 新字</label>
+          <label for="ratio-new" data-i18n="home.ratioNewLabel">🆕 新字</label>
           <input type="range" class="ratio-slider" id="ratio-new" min="0" max="100" step="1" value="80" />
           <span class="ratio-value" id="ratio-new-value">80%</span>
         </div>
         <div class="row">
-          <label for="ratio-incorrect">❌ 答錯待複習</label>
+          <label for="ratio-incorrect" data-i18n="home.ratioIncorrectLabel">❌ 答錯待複習</label>
           <input type="range" class="ratio-slider" id="ratio-incorrect" min="0" max="100" step="1" value="10" />
           <span class="ratio-value" id="ratio-incorrect-value">10%</span>
         </div>
         <div class="row">
-          <label for="ratio-learning">📖 學習中</label>
+          <label for="ratio-learning" data-i18n="home.ratioLearningLabel">📖 學習中</label>
           <input type="range" class="ratio-slider" id="ratio-learning" min="0" max="100" step="1" value="10" />
           <span class="ratio-value" id="ratio-learning-value">10%</span>
         </div>
         <div class="row" id="ratio-presets">
-          <button type="button" class="btn secondary small" data-ratio="80,10,10">以新字為主</button>
-          <button type="button" class="btn secondary small" data-ratio="0,70,30">只複習</button>
-          <button type="button" class="btn secondary small" data-ratio="34,33,33">平均分配</button>
+          <button type="button" class="btn secondary small" data-ratio="80,10,10" data-i18n="home.ratioPresetNew">以新字為主</button>
+          <button type="button" class="btn secondary small" data-ratio="0,70,30" data-i18n="home.ratioPresetReview">只複習</button>
+          <button type="button" class="btn secondary small" data-ratio="34,33,33" data-i18n="home.ratioPresetEven">平均分配</button>
         </div>
       </div>
 
       <details id="level-advanced-fold">
-        <summary>🛠️ 進階：單字等級範圍</summary>
-        <p class="hint">預設會用全部等級。「⚖️ 自動平衡」模式會自動平衡各等級出現的比例，不需要手動調整；想限制只練習特定等級再到這裡調整。</p>
+        <summary data-i18n="home.levelFoldSummary">🛠️ 進階：單字等級範圍</summary>
+        <p class="hint" data-i18n="home.levelFoldHint">預設會用全部等級。「⚖️ 自動平衡」模式會自動平衡各等級出現的比例，不需要手動調整；想限制只練習特定等級再到這裡調整。</p>
         <div class="level-picker" id="level-picker">
           <label class="level-chip"><input type="checkbox" value="4" checked><span>Level 4</span></label>
           <label class="level-chip"><input type="checkbox" value="5" checked><span>Level 5</span></label>
@@ -132,7 +133,7 @@
       </details>
 
       <div class="row actions">
-        <button class="btn primary" id="start-test-btn">📝 開始測驗</button>
+        <button class="btn primary" id="start-test-btn" data-i18n="home.startTestBtn">📝 開始測驗</button>
       </div>
     </div>
   </section>
@@ -142,10 +143,10 @@
     <div class="card center-card">
 
       <div id="test-empty" class="summary hidden">
-        <h2>沒有符合條件的單字</h2>
-        <p class="hint">目前沒有符合的單字可以出題，試試切換測驗模式，或回首頁勾選其他等級。</p>
+        <h2 data-i18n="test.emptyTitle">沒有符合條件的單字</h2>
+        <p class="hint" data-i18n="test.emptyHint">目前沒有符合的單字可以出題，試試切換測驗模式，或回首頁勾選其他等級。</p>
         <div class="row actions">
-          <button class="btn secondary" id="test-empty-home-btn">回首頁</button>
+          <button class="btn secondary" id="test-empty-home-btn" data-i18n="common.backToHome">回首頁</button>
         </div>
       </div>
 
@@ -153,18 +154,18 @@
         <div class="progress-row">
           <div class="progress-bar"><div class="progress-fill" id="test-progress-fill"></div></div>
           <span id="test-progress-text">00:00</span>
-          <button type="button" class="btn secondary small" id="test-exit-btn" title="提早結束這一回合，顯示目前的成績">結束</button>
+          <button type="button" class="btn secondary small" id="test-exit-btn" data-i18n="common.end" data-i18n-title="test.exitBtnTitle" title="提早結束這一回合，顯示目前的成績">結束</button>
         </div>
         <div class="level-badge" id="test-level-badge">Level 4</div>
 
-        <button class="play-btn" id="test-play-btn" title="播放發音 (Enter 重播)">🔊</button>
-        <p class="hint">聽發音，輸入你聽到的單字</p>
+        <button class="play-btn" id="test-play-btn" data-i18n-title="test.playBtnTitle" title="播放發音 (Enter 重播)">🔊</button>
+        <p class="hint" data-i18n="test.listenHint">聽發音，輸入你聽到的單字</p>
 
         <form id="test-form" autocomplete="off">
-          <input type="text" id="test-input" placeholder="輸入單字..." autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+          <input type="text" id="test-input" data-i18n-placeholder="test.inputPlaceholder" placeholder="輸入單字..." autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
           <div class="row actions">
-            <button type="button" class="btn secondary" id="test-replay-btn">🔁 重播</button>
-            <button type="submit" class="btn primary" id="test-submit-btn">送出</button>
+            <button type="button" class="btn secondary" id="test-replay-btn" data-i18n="test.replayBtn">🔁 重播</button>
+            <button type="submit" class="btn primary" id="test-submit-btn" data-i18n="test.submitBtn">送出</button>
           </div>
         </form>
 
@@ -172,14 +173,14 @@
       </div>
 
       <div id="test-summary" class="summary hidden">
-        <h2>本回合測驗結束！</h2>
+        <h2 data-i18n="test.finishedTitle">本回合測驗結束！</h2>
         <p id="test-summary-score"></p>
         <div id="test-summary-missed"></div>
         <div id="test-summary-all"></div>
         <div class="row actions">
-          <button class="btn primary" id="test-again-btn">再來一回合</button>
-          <button class="btn primary hidden" id="test-again-flashcard-btn">🎴 開始新的卡片複習</button>
-          <button class="btn secondary" id="test-home-btn">回首頁</button>
+          <button class="btn primary" id="test-again-btn" data-i18n="test.againBtn">再來一回合</button>
+          <button class="btn primary hidden" id="test-again-flashcard-btn" data-i18n="test.againFlashcardBtn">🎴 開始新的卡片複習</button>
+          <button class="btn secondary" id="test-home-btn" data-i18n="common.backToHome">回首頁</button>
         </div>
       </div>
     </div>
@@ -193,14 +194,14 @@
        back to 複習 always lands on this list, never mid-flashcard. -->
   <section id="view-reviewlist" class="view">
     <div class="card">
-      <h2>複習</h2>
+      <h2 data-i18n="review.title">複習</h2>
       <div class="row segmented" id="reviewlist-category-tabs">
-        <button type="button" class="segmented-btn active" data-category="incorrect">❌ 答錯 <span id="reviewlist-incorrect-count">0</span></button>
-        <button type="button" class="segmented-btn" data-category="learning">📖 學習中 <span id="reviewlist-learning-count">0</span></button>
-        <button type="button" class="segmented-btn" data-category="marked">⭐ 標記 <span id="reviewlist-marked-count">0</span></button>
+        <button type="button" class="segmented-btn active" data-category="incorrect"><span data-i18n="review.tabIncorrect">❌ 答錯</span> <span id="reviewlist-incorrect-count">0</span></button>
+        <button type="button" class="segmented-btn" data-category="learning"><span data-i18n="review.tabLearning">📖 學習中</span> <span id="reviewlist-learning-count">0</span></button>
+        <button type="button" class="segmented-btn" data-category="marked"><span data-i18n="review.tabMarked">⭐ 標記</span> <span id="reviewlist-marked-count">0</span></button>
       </div>
       <div class="row">
-        <input type="text" id="reviewlist-search" placeholder="搜尋單字..." />
+        <input type="text" id="reviewlist-search" data-i18n-placeholder="review.searchPlaceholder" placeholder="搜尋單字..." />
       </div>
     </div>
 
@@ -209,19 +210,19 @@
          Placed right at the top of 複習, directly under the header, so it's
          immediately visible rather than a button scrolled past the list. -->
     <div class="card" id="flashcard-launch-panel">
-      <h2>🎴 卡片複習模式</h2>
-      <p class="hint">選擇要複習的單字集合與數量，開始後會進入專屬的複習畫面，可以像測驗一樣中途離開。</p>
+      <h2 data-i18n="review.flashcardTitle">🎴 卡片複習模式</h2>
+      <p class="hint" data-i18n="review.flashcardIntro">選擇要複習的單字集合與數量，開始後會進入專屬的複習畫面，可以像測驗一樣中途離開。</p>
       <div class="row segmented" id="flashcard-launch-category">
-        <button type="button" class="segmented-btn active" data-category="incorrect">❌ 答錯待複習</button>
-        <button type="button" class="segmented-btn" data-category="learning">📖 學習中</button>
+        <button type="button" class="segmented-btn active" data-category="incorrect" data-i18n="review.flashcardCategoryIncorrect">❌ 答錯待複習</button>
+        <button type="button" class="segmented-btn" data-category="learning" data-i18n="review.flashcardCategoryLearning">📖 學習中</button>
       </div>
       <div class="row">
-        <label for="flashcard-launch-amount">數量（至少 20 個）</label>
+        <label for="flashcard-launch-amount" data-i18n="review.flashcardAmountLabel">數量（至少 20 個）</label>
         <input type="number" id="flashcard-launch-amount" min="20" step="5" value="20" />
       </div>
       <p class="hint" id="flashcard-launch-hint"></p>
       <div class="row actions">
-        <button type="button" class="btn primary" id="flashcard-launch-btn">🎴 開始卡片複習模式</button>
+        <button type="button" class="btn primary" id="flashcard-launch-btn" data-i18n="review.flashcardStartBtn">🎴 開始卡片複習模式</button>
       </div>
     </div>
 
@@ -229,7 +230,7 @@
     <div class="card" id="reviewlist-list-panel">
       <p class="hint" id="reviewlist-list-hint"></p>
       <div class="row">
-        <label for="reviewlist-sort">排序</label>
+        <label for="reviewlist-sort" data-i18n="review.sortLabel">排序</label>
         <select id="reviewlist-sort"></select>
       </div>
       <div id="reviewlist-items"></div>
@@ -247,37 +248,37 @@
     <div class="card center-card">
       <div class="progress-row flashcard-topbar">
         <p class="hint" id="flashcard-progress"></p>
-        <button type="button" class="btn secondary small" id="flashcard-exit-btn" title="提早結束這次卡片複習">結束</button>
+        <button type="button" class="btn secondary small" id="flashcard-exit-btn" data-i18n="common.end" data-i18n-title="flashcard.exitBtnTitle" title="提早結束這次卡片複習">結束</button>
       </div>
 
       <div id="flashcard-session-body">
         <div class="flashcard-stage">
           <div class="flashcard" id="flashcard">
             <div class="flashcard-level" id="flashcard-level"></div>
-            <button type="button" class="flashcard-mark-btn" id="flashcard-mark-btn" title="標記／取消標記，稍後想再複習">☆</button>
-            <button type="button" class="card-play-btn flashcard-play-btn" id="flashcard-play-btn" title="播放發音">🔊</button>
+            <button type="button" class="flashcard-mark-btn" id="flashcard-mark-btn" data-i18n-title="review.markToggleTitle" title="標記／取消標記，稍後想再複習">☆</button>
+            <button type="button" class="card-play-btn flashcard-play-btn" id="flashcard-play-btn" data-i18n-title="review.playAudioTitle" title="播放發音">🔊</button>
             <div class="flashcard-word" id="flashcard-word"></div>
             <div class="flashcard-pos muted" id="flashcard-pos"></div>
             <div class="flashcard-reveal" id="flashcard-reveal"></div>
-            <p class="hint flashcard-tap-hint" id="flashcard-tap-hint">點卡片可暫時隱藏意思</p>
+            <p class="hint flashcard-tap-hint" id="flashcard-tap-hint" data-i18n="flashcard.tapHintHidden">點卡片可暫時隱藏意思</p>
           </div>
         </div>
         <div class="row actions flashcard-nav">
-          <button type="button" class="btn secondary" id="flashcard-prev-btn">‹ 上一個</button>
-          <button type="button" class="btn secondary" id="flashcard-next-btn">下一個 ›</button>
+          <button type="button" class="btn secondary" id="flashcard-prev-btn" data-i18n="flashcard.prevBtn">‹ 上一個</button>
+          <button type="button" class="btn secondary" id="flashcard-next-btn" data-i18n="flashcard.nextBtn">下一個 ›</button>
         </div>
         <div class="row actions">
-          <button type="button" class="btn primary" id="flashcard-test-btn" disabled>📝 測驗這些單字</button>
+          <button type="button" class="btn primary" id="flashcard-test-btn" disabled data-i18n="flashcard.testBtn">📝 測驗這些單字</button>
         </div>
         <p class="hint" id="flashcard-test-hint"></p>
       </div>
 
       <div id="flashcard-finish" class="summary hidden">
-        <h2>這批卡片複習完成！</h2>
+        <h2 data-i18n="flashcard.finishedTitle">這批卡片複習完成！</h2>
         <p id="flashcard-finish-text"></p>
         <div class="row actions">
-          <button type="button" class="btn primary" id="flashcard-finish-test-btn">📝 測驗這些單字</button>
-          <button type="button" class="btn secondary" id="flashcard-finish-exit-btn">回複習列表</button>
+          <button type="button" class="btn primary" id="flashcard-finish-test-btn" data-i18n="flashcard.testBtn">📝 測驗這些單字</button>
+          <button type="button" class="btn secondary" id="flashcard-finish-exit-btn" data-i18n="flashcard.finishExitBtn">回複習列表</button>
         </div>
       </div>
     </div>
@@ -286,79 +287,79 @@
   <!-- PROGRESS -->
   <section id="view-progress" class="view">
     <div class="card">
-      <h2>學習總覽</h2>
+      <h2 data-i18n="progress.overviewTitle">學習總覽</h2>
       <div class="stats-grid" id="progress-grid"></div>
       <p class="hint" id="progress-trend-hint"></p>
 
-      <h2>各等級熟悉度</h2>
+      <h2 data-i18n="progress.levelsTitle">各等級熟悉度</h2>
       <div id="progress-levels"></div>
 
-      <h2>🔄 跨裝置同步</h2>
-      <p class="hint">把學習紀錄同步到你的其他裝置。先按「建立新同步」，再到其他裝置輸入密碼「加入同步」。</p>
+      <h2 data-i18n="progress.syncTitle">🔄 跨裝置同步</h2>
+      <p class="hint" data-i18n="progress.syncIntro">把學習紀錄同步到你的其他裝置。先按「建立新同步」，再到其他裝置輸入密碼「加入同步」。</p>
 
       <div id="sync-setup-box">
         <div class="row actions">
-          <button class="btn primary" id="sync-create-btn">🔗 建立新同步</button>
+          <button class="btn primary" id="sync-create-btn" data-i18n="progress.syncCreateBtn">🔗 建立新同步</button>
         </div>
         <details id="sync-join-fold">
-          <summary>已有同步密碼？加入同步</summary>
+          <summary data-i18n="progress.syncJoinFoldSummary">已有同步密碼？加入同步</summary>
           <div class="row">
-            <label for="sync-join-passcode">密碼</label>
-            <input type="text" id="sync-join-passcode" placeholder="貼上同步密碼" autocomplete="off" />
+            <label for="sync-join-passcode" data-i18n="progress.passcodeLabel">密碼</label>
+            <input type="text" id="sync-join-passcode" data-i18n-placeholder="progress.syncJoinPlaceholder" placeholder="貼上同步密碼" autocomplete="off" />
           </div>
           <div class="row actions">
-            <button class="btn primary" id="sync-join-btn">加入同步</button>
+            <button class="btn primary" id="sync-join-btn" data-i18n="progress.syncJoinBtn">加入同步</button>
           </div>
         </details>
       </div>
 
       <div id="sync-created-codes" class="hidden sync-created-box">
-        <p class="hint danger-text">請先複製保存這組密碼——之後不會再完整顯示第二次！</p>
-        <div class="row"><label>密碼</label><strong id="sync-created-passcode"></strong>
-          <button type="button" class="btn secondary small" id="sync-created-passcode-copy">複製</button></div>
-        <div class="row actions"><button class="btn primary" id="sync-ack-btn">已保存，關閉</button></div>
+        <p class="hint danger-text" data-i18n="progress.syncCreatedWarning">請先複製保存這組密碼——之後不會再完整顯示第二次！</p>
+        <div class="row"><label data-i18n="progress.passcodeLabel">密碼</label><strong id="sync-created-passcode"></strong>
+          <button type="button" class="btn secondary small" id="sync-created-passcode-copy" data-i18n="progress.copyBtn">複製</button></div>
+        <div class="row actions"><button class="btn primary" id="sync-ack-btn" data-i18n="progress.syncAckBtn">已保存，關閉</button></div>
       </div>
 
       <div id="sync-active-box" class="hidden">
         <div class="row">
-          <label>密碼</label>
-          <button type="button" class="btn secondary small" id="sync-passcode-toggle">顯示密碼</button>
+          <label data-i18n="progress.passcodeLabel">密碼</label>
+          <button type="button" class="btn secondary small" id="sync-passcode-toggle" data-i18n="progress.showPasscodeBtn">顯示密碼</button>
           <strong class="hidden" id="sync-passcode-value"></strong>
         </div>
         <div class="row actions">
-          <button class="btn secondary" id="sync-now-btn">🔄 立即同步</button>
-          <button class="btn secondary" id="sync-unlink-btn">解除同步</button>
-          <button class="btn danger" id="sync-delete-btn">整個刪除同步</button>
+          <button class="btn secondary" id="sync-now-btn" data-i18n="progress.syncNowBtn">🔄 立即同步</button>
+          <button class="btn secondary" id="sync-unlink-btn" data-i18n="progress.syncUnlinkBtn">解除同步</button>
+          <button class="btn danger" id="sync-delete-btn" data-i18n="progress.syncDeleteBtn">整個刪除同步</button>
         </div>
       </div>
       <p class="hint" id="sync-status"></p>
 
-      <h2>備份與還原（手動）</h2>
-      <p class="hint">也可以手動匯出備份檔，或匯入到其他裝置。</p>
+      <h2 data-i18n="progress.backupTitle">備份與還原（手動）</h2>
+      <p class="hint" data-i18n="progress.backupIntro">也可以手動匯出備份檔，或匯入到其他裝置。</p>
       <div class="row actions">
-        <button class="btn secondary" id="export-progress-btn">📤 匯出學習紀錄</button>
-        <button class="btn secondary" id="import-progress-btn">📥 匯入學習紀錄</button>
+        <button class="btn secondary" id="export-progress-btn" data-i18n="progress.exportBtn">📤 匯出學習紀錄</button>
+        <button class="btn secondary" id="import-progress-btn" data-i18n="progress.importBtn">📥 匯入學習紀錄</button>
         <input type="file" id="import-progress-file" accept="application/json,.json" class="hidden" />
       </div>
       <p class="hint hidden" id="import-status"></p>
 
       <div class="row actions">
-        <button class="btn danger" id="reset-progress-btn">清除全部學習紀錄</button>
+        <button class="btn danger" id="reset-progress-btn" data-i18n="progress.resetBtn">清除全部學習紀錄</button>
       </div>
 
-      <h2>單字明細</h2>
+      <h2 data-i18n="progress.detailTitle">單字明細</h2>
       <div class="row" id="progress-filter-chips">
-        <button type="button" class="filter-chip active" data-state="attempted">已練習過</button>
-        <button type="button" class="filter-chip" data-state="new">尚未測驗</button>
-        <button type="button" class="filter-chip" data-state="incorrect">答錯待複習</button>
-        <button type="button" class="filter-chip" data-state="learning">學習中</button>
-        <button type="button" class="filter-chip" data-state="memorized">已熟記</button>
-        <button type="button" class="filter-chip" data-state="all">全部單字</button>
+        <button type="button" class="filter-chip active" data-state="attempted" data-i18n="progress.filterAttempted">已練習過</button>
+        <button type="button" class="filter-chip" data-state="new" data-i18n="progress.filterNew">尚未測驗</button>
+        <button type="button" class="filter-chip" data-state="incorrect" data-i18n="progress.filterIncorrect">答錯待複習</button>
+        <button type="button" class="filter-chip" data-state="learning" data-i18n="progress.filterLearning">學習中</button>
+        <button type="button" class="filter-chip" data-state="memorized" data-i18n="progress.filterMemorized">已熟記</button>
+        <button type="button" class="filter-chip" data-state="all" data-i18n="progress.filterAll">全部單字</button>
       </div>
       <div class="row">
-        <input type="text" id="progress-search" placeholder="搜尋單字..." />
+        <input type="text" id="progress-search" data-i18n-placeholder="progress.searchPlaceholder" placeholder="搜尋單字..." />
       </div>
-      <p class="hint">點擊單字可以顯示／隱藏中文意思，點擊 🔊 可以播放發音。</p>
+      <p class="hint" data-i18n="progress.detailHint">點擊單字可以顯示／隱藏中文意思，點擊 🔊 可以播放發音。</p>
       <div id="progress-word-table"></div>
       <div id="progress-word-table-pager"></div>
     </div>
@@ -367,9 +368,9 @@
 </main>
 
 <footer class="footer">
-  <p>資料來源：大學入學考試中心「高中英文參考詞彙表」（108 課綱），Level 4–6，共 <span id="footer-total"></span> 字。</p>
+  <p id="footer-source"></p>
   <p class="update-row">
-    <button id="update-check-btn" class="btn secondary small">🔄 檢查更新</button>
+    <button id="update-check-btn" class="btn secondary small" data-i18n="footer.updateCheckBtn">🔄 檢查更新</button>
     <span id="update-status" class="update-status"></span>
   </p>
 </footer>
@@ -385,15 +386,62 @@
   <div class="modal-box" role="alertdialog" aria-modal="true" aria-labelledby="modal-message">
     <div id="modal-message"></div>
     <div class="row actions modal-actions">
-      <button type="button" class="btn secondary" id="modal-cancel-btn">取消</button>
-      <button type="button" class="btn primary" id="modal-ok-btn">確定</button>
+      <button type="button" class="btn secondary" id="modal-cancel-btn" data-i18n="common.cancel">取消</button>
+      <button type="button" class="btn primary" id="modal-ok-btn" data-i18n="common.confirm">確定</button>
     </div>
   </div>
 </div>
 
+<script src="i18n.js?v=__BUILD_VERSION__"></script>
 <script src="logic.js?v=__BUILD_VERSION__"></script>
 <script src="app.js?v=__BUILD_VERSION__"></script>
 <script src="sync.js?v=__BUILD_VERSION__"></script>
 <script src="vocab-ai.js?v=__BUILD_VERSION__"></script>
+<script>
+  (function () {
+    // Applies i18n.js translations to every static data-i18n[-placeholder|
+    // -title] element in this page, populates the language switcher, and
+    // sets <html lang> to match - runs once, right after i18n.js loads
+    // (before app.js/sync.js's own dynamic renders, which call I18n.t()
+    // directly instead of relying on this scan). Kept inline (not in
+    // i18n.js itself) since it only touches static markup specific to this
+    // page's own IDs/attributes, not something a future consumer of
+    // i18n.js's exports would want bundled in.
+    function applyStaticTranslations() {
+      document.documentElement.lang = window.I18n.getLocale() === "en" ? "en" : "zh-Hant";
+      document.querySelectorAll("[data-i18n]").forEach((el) => {
+        el.textContent = window.I18n.t(el.getAttribute("data-i18n"));
+      });
+      document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+        el.setAttribute("placeholder", window.I18n.t(el.getAttribute("data-i18n-placeholder")));
+      });
+      document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+        el.setAttribute("title", window.I18n.t(el.getAttribute("data-i18n-title")));
+      });
+    }
+
+    function populateLanguageSelect() {
+      const select = document.getElementById("language-select");
+      if (!select) return;
+      select.innerHTML = window.I18n.LOCALES.map(
+        (loc) => `<option value="${loc.code}">${loc.nativeName}</option>`
+      ).join("");
+      select.value = window.I18n.getLocale();
+      select.addEventListener("change", () => {
+        window.I18n.setLocale(select.value);
+        // A full reload is the simplest way to guarantee every already-
+        // rendered dynamic string (test feedback, review cards, progress
+        // table, sync status text, etc. - all built by app.js/sync.js at
+        // runtime, not just this static scan) picks up the new locale
+        // consistently, rather than re-implementing a live re-render for
+        // every one of those call sites.
+        location.reload();
+      });
+    }
+
+    applyStaticTranslations();
+    populateLanguageSelect();
+  })();
+</script>
 </body>
 </html>

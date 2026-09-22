@@ -141,14 +141,14 @@ function bytesFromBase64(b64) {
   return bytes;
 }
 async function encodeSyncPayload(data) {
-  if (typeof CompressionStream !== "function") throw new Error("此裝置不支援同步所需的壓縮功能。");
+  if (typeof CompressionStream !== "function") throw new Error(I18n.t("sync.notSupportedCompression"));
   const raw = JSON.stringify(data);
   const stream = new Blob([raw]).stream().pipeThrough(new CompressionStream("gzip"));
   const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
   return base64FromBytes(bytes);
 }
 async function decodeSyncPayload(text) {
-  if (typeof DecompressionStream !== "function") throw new Error("此裝置不支援同步所需的解壓縮功能。");
+  if (typeof DecompressionStream !== "function") throw new Error(I18n.t("sync.notSupportedDecompression"));
   const stream = new Blob([bytesFromBase64(text)]).stream().pipeThrough(new DecompressionStream("gzip"));
   return JSON.parse(await new Response(stream).text());
 }
@@ -414,7 +414,7 @@ function proxyUrl(passcode) {
 async function proxyErrorMessage(response) {
   if (response.status === 429) {
     registerRateLimitHit();
-    return "請求過於頻繁，請稍後再試。";
+    return I18n.t("common.tooManyRequests");
   }
   const errorJson = await response.json().catch(() => ({}));
   return errorJson.error?.message || response.statusText || `HTTP ${response.status}`;
@@ -444,7 +444,7 @@ async function createSyncDoc(payload) {
     const data = await response.json();
     return { ok: true, passcode: data.passcode, updateTime: data.updateTime || "" };
   } catch (error) {
-    return { ok: false, error: `建立同步失敗：${error.message || error}` };
+    return { ok: false, error: I18n.t("sync.createFailed", { message: error.message || error }) };
   }
 }
 
@@ -519,7 +519,7 @@ function setSyncStatus(text, isError) {
 // by unlinking instead (see unlinkAfterReset), not by overwriting.
 async function pushSnapshot() {
   const passcode = getSyncPasscode();
-  if (!isSyncProxyConfigured() || !passcode) return { ok: false, error: "尚未設定同步。" };
+  if (!isSyncProxyConfigured() || !passcode) return { ok: false, error: I18n.t("sync.notConfigured") };
   try {
     const localSnapshot = buildSyncSnapshotData();
     const doc = await fetchSyncDoc(passcode);
@@ -561,7 +561,7 @@ async function pushSnapshot() {
     dirty = false;
     return { ok: true, pushed: true };
   } catch (error) {
-    return { ok: false, error: `同步上傳失敗：${error.message || error}` };
+    return { ok: false, error: I18n.t("sync.uploadFailed", { message: error.message || error }) };
   }
 }
 
@@ -583,7 +583,7 @@ async function pushSnapshot() {
 async function pullSnapshot(opts) {
   const force = !!(opts && opts.force);
   const passcode = getSyncPasscode();
-  if (!isSyncProxyConfigured() || !passcode) return { ok: false, error: "尚未設定同步。" };
+  if (!isSyncProxyConfigured() || !passcode) return { ok: false, error: I18n.t("sync.notConfigured") };
   try {
     const doc = await fetchSyncDoc(passcode);
     if (!doc.ok) throw new Error(doc.error);
@@ -616,7 +616,7 @@ async function pullSnapshot(opts) {
     dirty = false;
     return { ok: true, applied: true, exists: true };
   } catch (error) {
-    return { ok: false, error: `同步下載失敗：${error.message || error}` };
+    return { ok: false, error: I18n.t("sync.downloadFailed", { message: error.message || error }) };
   }
 }
 
@@ -657,7 +657,7 @@ async function runSyncTick() {
   // needing the user to notice and retry manually.
   if (Date.now() < rateLimitBackoffUntil) {
     const secondsLeft = Math.ceil((rateLimitBackoffUntil - Date.now()) / 1000);
-    setSyncStatus(`同步請求過於頻繁，${secondsLeft} 秒後自動重試（學習紀錄已存在本機，不會遺失）。`, true);
+    setSyncStatus(I18n.t("sync.tooFrequentRetry", { seconds: secondsLeft }), true);
     return { ok: false, changed: false };
   }
   if (dirty || !hasSyncedSinceLoad) {
@@ -671,10 +671,13 @@ async function runSyncTick() {
       setSyncStatus(result.error, true);
     } else if (result.pulledInstead) {
       setSyncStatus(
-        `其他裝置的練習次數比較多（${result.remoteTotalAttempts} 次，這台裝置 ${result.localTotalAttempts} 次），已改為抓取最新進度，避免覆蓋掉它。`
+        I18n.t("sync.pulledInsteadOfPush", {
+          remote: result.remoteTotalAttempts,
+          local: result.localTotalAttempts,
+        })
       );
     } else {
-      setSyncStatus(`已同步（${new Date().toLocaleTimeString("zh-TW")}）`);
+      setSyncStatus(I18n.t("sync.syncedAt", { time: new Date().toLocaleTimeString(I18n.getLocale()) }));
     }
     return { ok: result.ok, changed: !!result.pulledInstead };
   }
@@ -686,10 +689,15 @@ async function runSyncTick() {
   if (!result.ok) {
     setSyncStatus(result.error, true);
   } else if (result.applied) {
-    setSyncStatus(`已從其他裝置更新學習紀錄（${new Date().toLocaleTimeString("zh-TW")}）`);
+    setSyncStatus(
+      I18n.t("sync.updatedFromOtherDevice", { time: new Date().toLocaleTimeString(I18n.getLocale()) })
+    );
   } else if (result.pushedInstead) {
     setSyncStatus(
-      `這台裝置的練習次數比較多（${result.localTotalAttempts} 次，其他裝置 ${result.remoteTotalAttempts} 次），已改為上傳最新進度，避免遺失。`
+      I18n.t("sync.pushedInsteadOfPull", {
+        local: result.localTotalAttempts,
+        remote: result.remoteTotalAttempts,
+      })
     );
   }
   return { ok: result.ok, changed: !!(result.ok && result.applied) };
@@ -834,7 +842,7 @@ window.addEventListener("online", syncOnAppActive);
 // wasn't pushed yet is picked up automatically the moment `online` fires.
 window.addEventListener("offline", () => {
   if (isSyncConfigured()) {
-    setSyncStatus("目前離線，同步已暫時停用（學習紀錄仍正常存在這台裝置）。恢復網路連線後會自動繼續同步。");
+    setSyncStatus(I18n.t("sync.offlineStatus"));
   }
 });
 
@@ -855,13 +863,13 @@ async function copyTextWithFeedback(text, button) {
     await navigator.clipboard.writeText(text);
     if (button) {
       const prev = button.textContent;
-      button.textContent = "已複製！";
+      button.textContent = I18n.t("sync.copiedFeedback");
       setTimeout(() => {
         button.textContent = prev;
       }, 1500);
     }
   } catch (e) {
-    setSyncStatus("複製失敗，請手動選取複製。", true);
+    setSyncStatus(I18n.t("sync.copyFailed"), true);
   }
 }
 
@@ -879,7 +887,7 @@ function renderSyncPanel() {
   if (!setupBox || !activeBox || !createdBox) return;
 
   if (!isSyncProxyConfigured()) {
-    setupBox.innerHTML = `<p class="hint">跨裝置同步功能尚未設定，請聯絡開發者。</p>`;
+    setupBox.innerHTML = `<p class="hint">${escapeHtml(I18n.t("sync.notSetUp"))}</p>`;
     createdBox.classList.add("hidden");
     activeBox.classList.add("hidden");
     return;
@@ -903,26 +911,23 @@ function renderSyncPanel() {
       valueEl.classList.add("hidden");
       valueEl.textContent = "";
     }
-    if (toggleBtn) toggleBtn.textContent = "顯示密碼";
+    if (toggleBtn) toggleBtn.textContent = I18n.t("progress.showPasscodeBtn");
   }
 }
 
 async function vocabSyncCreate() {
   if (!isSyncProxyConfigured()) {
-    setSyncStatus("跨裝置同步功能尚未設定，請聯絡開發者。", true);
+    setSyncStatus(I18n.t("sync.notSetUp"), true);
     return;
   }
   if (!navigator.onLine) {
-    setSyncStatus("目前沒有網路連線，無法建立同步。", true);
+    setSyncStatus(I18n.t("sync.offlineCreate"), true);
     return;
   }
-  const confirmed = await window.VocabUI.confirm(
-    "建立新同步會產生一組新的同步密碼，用來在你自己的其他裝置之間同步學習紀錄。\n\n" +
-      "已經有密碼的話請改用「加入同步」。要繼續嗎？"
-  );
+  const confirmed = await window.VocabUI.confirm(I18n.t("sync.createConfirm"));
   if (!confirmed) return;
   withButtonDisabled("sync-create-btn", async () => {
-    setSyncStatus("正在建立同步…");
+    setSyncStatus(I18n.t("sync.creating"));
     const payload = await encodeSyncPayload(buildSyncSnapshotData());
     const result = await createSyncDoc(payload);
     if (!result.ok) {
@@ -945,35 +950,32 @@ async function vocabSyncCreate() {
 
 function vocabSyncJoin() {
   if (!isSyncProxyConfigured()) {
-    setSyncStatus("跨裝置同步功能尚未設定，請聯絡開發者。", true);
+    setSyncStatus(I18n.t("sync.notSetUp"), true);
     return;
   }
   if (!navigator.onLine) {
-    setSyncStatus("目前沒有網路連線，無法加入同步。", true);
+    setSyncStatus(I18n.t("sync.offlineJoin"), true);
     return;
   }
   const passcodeInput = document.getElementById("sync-join-passcode");
   const passcode = (passcodeInput?.value || "").trim();
   if (!passcode) {
-    setSyncStatus("請輸入同步密碼。", true);
+    setSyncStatus(I18n.t("sync.enterPasscode"), true);
     return;
   }
 
   withButtonDisabled("sync-join-btn", async () => {
-    setSyncStatus("正在檢查同步密碼…");
+    setSyncStatus(I18n.t("sync.checkingPasscode"));
     const doc = await fetchSyncDoc(passcode);
     if (!doc.ok) {
       setSyncStatus(doc.error, true);
       return;
     }
     if (!doc.exists) {
-      setSyncStatus("找不到這組同步密碼，請確認後再試一次。", true);
+      setSyncStatus(I18n.t("sync.passcodeNotFound"), true);
       return;
     }
-    const confirmed = await window.VocabUI.confirm(
-      "加入同步會立刻用該密碼下的學習紀錄取代這台裝置目前的紀錄。\n\n" +
-        "這台裝置目前的紀錄會先備份起來，解除同步後可以選擇找回，但要繼續嗎？"
-    );
+    const confirmed = await window.VocabUI.confirm(I18n.t("sync.joinConfirm"));
     if (!confirmed) {
       setSyncStatus("");
       return;
@@ -994,7 +996,7 @@ function vocabSyncJoin() {
     // need to force another pull first (see hasSyncedSinceLoad).
     hasSyncedSinceLoad = true;
     if (passcodeInput) passcodeInput.value = "";
-    setSyncStatus("已加入同步。");
+    setSyncStatus(I18n.t("sync.joined"));
     renderSyncPanel();
     startSyncLoopIfConfigured();
   });
@@ -1003,7 +1005,7 @@ function vocabSyncJoin() {
 function vocabSyncNow() {
   if (!isSyncConfigured()) return;
   if (!navigator.onLine) {
-    setSyncStatus("目前沒有網路連線，無法同步。", true);
+    setSyncStatus(I18n.t("sync.offlineSyncNow"), true);
     return;
   }
   withButtonDisabled("sync-now-btn", async () => {
@@ -1013,10 +1015,10 @@ function vocabSyncNow() {
     // instead of always hitting the network.
     if (Date.now() < rateLimitBackoffUntil) {
       const secondsLeft = Math.ceil((rateLimitBackoffUntil - Date.now()) / 1000);
-      setSyncStatus(`同步請求過於頻繁，${secondsLeft} 秒後自動重試（學習紀錄已存在本機，不會遺失）。`, true);
+      setSyncStatus(I18n.t("sync.tooFrequentRetry", { seconds: secondsLeft }), true);
       return;
     }
-    setSyncStatus("正在同步…");
+    setSyncStatus(I18n.t("sync.syncingNow"));
     // Same reasoning as syncTick(): "haven't reconciled this session yet"
     // is treated the same as dirty, both routed through the guarded
     // pushSnapshot() - see that function and computeTotalAttempts's own
@@ -1033,10 +1035,13 @@ function vocabSyncNow() {
         setSyncStatus(result.error, true);
       } else if (result.pulledInstead) {
         setSyncStatus(
-          `其他裝置的練習次數比較多（${result.remoteTotalAttempts} 次，這台裝置 ${result.localTotalAttempts} 次），已改為抓取最新進度，避免覆蓋掉它。`
+          I18n.t("sync.pulledInsteadOfPush", {
+            remote: result.remoteTotalAttempts,
+            local: result.localTotalAttempts,
+          })
         );
       } else {
-        setSyncStatus("已同步。");
+        setSyncStatus(I18n.t("sync.synced"));
       }
       return;
     }
@@ -1048,13 +1053,16 @@ function vocabSyncNow() {
     if (!result.ok) {
       setSyncStatus(result.error, true);
     } else if (result.applied) {
-      setSyncStatus("已更新為最新的學習紀錄。");
+      setSyncStatus(I18n.t("sync.updatedToLatest"));
     } else if (result.pushedInstead) {
       setSyncStatus(
-        `這台裝置的練習次數比較多（${result.localTotalAttempts} 次，其他裝置 ${result.remoteTotalAttempts} 次），已改為上傳最新進度，避免遺失。`
+        I18n.t("sync.pushedInsteadOfPull", {
+          local: result.localTotalAttempts,
+          remote: result.remoteTotalAttempts,
+        })
       );
     } else {
-      setSyncStatus("已是最新。");
+      setSyncStatus(I18n.t("sync.alreadyLatest"));
     }
   });
 }
@@ -1072,7 +1080,7 @@ async function promptRestoreBackupIfAny() {
   } catch (e) {
     return;
   }
-  const confirmed = await window.VocabUI.confirm("要找回加入同步前的本機學習紀錄嗎？（取消則繼續使用目前的學習紀錄）");
+  const confirmed = await window.VocabUI.confirm(I18n.t("sync.restoreBackupPrompt"));
   if (!confirmed) return;
   // `backup` is a full snapshot object from buildSyncSnapshotData() (see
   // vocabSyncJoin above), so its `progress` is in the same compact,
@@ -1081,7 +1089,7 @@ async function promptRestoreBackupIfAny() {
   // progressStore-shaped object again.
   const restoredProgress = expandSyncedProgress(backup.progress, backup.exportedAt);
   window.VocabState.applySyncedSnapshot(restoredProgress, backup.settings);
-  setSyncStatus("已還原加入同步前的學習紀錄。");
+  setSyncStatus(I18n.t("sync.restoredBackup"));
 }
 
 // Shared by vocabSyncUnlink (its own confirm, own status message, offers
@@ -1105,16 +1113,14 @@ function performUnlink(statusMessage) {
 // local-only exactly like a manual "解除同步" would (see performUnlink),
 // plus the same backup-restore offer every other unlink path gives.
 function handleRemoteSyncDeletion() {
-  performUnlink("同步已被刪除，這台裝置已自動解除同步（本機學習紀錄不受影響）。");
+  performUnlink(I18n.t("sync.deletedRemotelyAutoUnlinked"));
   promptRestoreBackupIfAny();
 }
 
 async function vocabSyncUnlink() {
-  const confirmed = await window.VocabUI.confirm(
-    "解除同步後這台裝置會變回只在本機儲存進度，之後可用同一組代碼重新加入。其他裝置不受影響。要繼續嗎？"
-  );
+  const confirmed = await window.VocabUI.confirm(I18n.t("sync.unlinkConfirm"));
   if (!confirmed) return;
-  performUnlink("已解除同步（本機學習紀錄不受影響）。");
+  performUnlink(I18n.t("sync.unlinked"));
   promptRestoreBackupIfAny();
 }
 
@@ -1133,33 +1139,33 @@ async function vocabSyncUnlink() {
 // untouched either way.
 function unlinkAfterReset() {
   if (!isSyncConfigured()) return;
-  performUnlink("已清除學習紀錄並解除同步（其他裝置與伺服器上的紀錄不受影響）。");
+  performUnlink(I18n.t("sync.clearedAndUnlinked"));
 }
 
 async function vocabSyncDeleteForEveryone() {
   const passcode = getSyncPasscode();
   if (!passcode) return;
   if (!navigator.onLine) {
-    setSyncStatus("目前沒有網路連線，無法刪除同步。", true);
+    setSyncStatus(I18n.t("sync.offlineDelete"), true);
     return;
   }
-  const confirmed = await window.VocabUI.confirm(
-    "確定要整個刪除這組同步嗎？\n\n所有使用這組密碼的裝置都會斷開連結，此動作無法復原。",
-    { confirmText: "刪除", danger: true }
-  );
+  const confirmed = await window.VocabUI.confirm(I18n.t("sync.deleteConfirm"), {
+    confirmText: I18n.t("common.delete"),
+    danger: true,
+  });
   if (!confirmed) return;
   withButtonDisabled("sync-delete-btn", async () => {
-    setSyncStatus("正在刪除同步…");
+    setSyncStatus(I18n.t("sync.deleting"));
     const result = await deleteSyncDoc(passcode);
     if (!result.ok) {
-      setSyncStatus(`刪除失敗：${result.error}`, true);
+      setSyncStatus(I18n.t("sync.deleteFailed", { message: result.error }), true);
       return;
     }
     clearSyncPairing();
     syncLoopStarted = false;
     dirty = false;
     renderSyncPanel();
-    setSyncStatus("已整個刪除同步，所有裝置都已斷開連結。");
+    setSyncStatus(I18n.t("sync.deletedAllDisconnected"));
     promptRestoreBackupIfAny();
   });
 }
@@ -1171,7 +1177,7 @@ function togglePasscodeReveal() {
   const showing = valueEl.classList.contains("hidden");
   valueEl.classList.toggle("hidden", !showing);
   if (showing) valueEl.textContent = getSyncPasscode();
-  toggleBtn.textContent = showing ? "隱藏密碼" : "顯示密碼";
+  toggleBtn.textContent = showing ? I18n.t("progress.hidePasscodeBtn") : I18n.t("progress.showPasscodeBtn");
 }
 
 function acknowledgeSyncCreatedCodes() {

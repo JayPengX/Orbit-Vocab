@@ -46,14 +46,14 @@ function isVocabAiConfigured() {
 // app's own vocab-ai:* rate-limit bucket (see the Worker's
 // VOCAB_AI_RATE_LIMIT), independent of /gemini's or /vocab-sync's own.
 async function vocabAiErrorMessage(response) {
-  if (response.status === 429) return "請求過於頻繁，請稍後再試。";
+  if (response.status === 429) return I18n.t("common.tooManyRequests");
   const errorJson = await response.json().catch(() => ({}));
   return errorJson.error?.message || response.statusText || `HTTP ${response.status}`;
 }
 
 async function callVocabAi(body) {
-  if (!isVocabAiConfigured()) return { ok: false, error: "AI 功能尚未設定，請聯絡開發者。" };
-  if (!navigator.onLine) return { ok: false, error: "目前沒有網路連線，無法使用 AI 功能。" };
+  if (!isVocabAiConfigured()) return { ok: false, error: I18n.t("ai.notConfigured") };
+  if (!navigator.onLine) return { ok: false, error: I18n.t("ai.offline") };
   let response;
   try {
     response = await fetch(VOCAB_AI_URL, {
@@ -62,7 +62,7 @@ async function callVocabAi(body) {
       body: JSON.stringify(body),
     });
   } catch (networkError) {
-    return { ok: false, error: `無法連線至 AI 服務：${networkError.message}` };
+    return { ok: false, error: I18n.t("ai.networkErrorPrefix", { message: networkError.message }) };
   }
   if (!response.ok) return { ok: false, error: await vocabAiErrorMessage(response) };
   return { ok: true, data: await response.json() };
@@ -83,7 +83,7 @@ async function generateMnemonic({ word, pos, meaning, wrongAnswers }) {
   });
   if (!result.ok) return result;
   const mnemonic = typeof result.data?.mnemonic === "string" ? result.data.mnemonic.trim() : "";
-  if (!mnemonic) return { ok: false, error: "AI 沒有回傳有效的記憶法，請稍後再試一次。" };
+  if (!mnemonic) return { ok: false, error: I18n.t("ai.noMnemonic") };
   return { ok: true, mnemonic };
 }
 

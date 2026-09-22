@@ -10,6 +10,9 @@ const APP_VERSION = "__BUILD_VERSION__";
 // tests/logic.test.js). This file only owns storage I/O, DOM rendering,
 // and speech synthesis - see README/section "Architecture" for the split.
 const Logic = window.VocabLogic;
+// See i18n.js's own top-of-file comment - every UI-facing string in this
+// file goes through I18n.t() instead of a hardcoded literal.
+const I18n = window.I18n;
 
 const PROGRESS_KEY = "vocab_progress_v1";
 const SETTINGS_KEY = "vocab_settings_v1";
@@ -135,11 +138,10 @@ function showStorageWarning() {
   banner.id = "storage-warning-banner";
   banner.setAttribute("role", "alert");
   const messageEl = document.createElement("p");
-  messageEl.textContent =
-    "⚠️ 無法儲存學習紀錄（裝置儲存空間可能已滿，或瀏覽器封鎖了本機儲存）。目前的練習結果可能不會被保留，建議立即到「設定」匯出備份檔，並清理裝置儲存空間。";
+  messageEl.textContent = I18n.t("storage.warning");
   const dismissBtn = document.createElement("button");
   dismissBtn.type = "button";
-  dismissBtn.textContent = "知道了";
+  dismissBtn.textContent = I18n.t("common.gotIt");
   dismissBtn.addEventListener("click", () => banner.remove());
   banner.appendChild(messageEl);
   banner.appendChild(dismissBtn);
@@ -155,7 +157,7 @@ function applySettingsToUI() {
   document.getElementById("rate-select").value = settings.rate;
   document.getElementById("rate-value").textContent = `${settings.rate.toFixed(1)}x`;
   document.getElementById("test-minutes").value = String(settings.testMinutes);
-  document.getElementById("test-minutes-value").textContent = `${settings.testMinutes} 分鐘`;
+  document.getElementById("test-minutes-value").textContent = I18n.t("home.minutesValue", { minutes: settings.testMinutes });
   RATIO_KEYS.forEach((key) => {
     const value = settings.wordRatio[key];
     document.getElementById(`ratio-${key}`).value = String(value);
@@ -210,13 +212,13 @@ function updateAutoRatioHint() {
   const remaining = 1 - reintroduceShare;
 
   const parts = [
-    `新字 ${Math.round(ratio.new * remaining * 100)}%`,
-    `答錯 ${Math.round(ratio.incorrect * remaining * 100)}%`,
-    `學習中 ${Math.round(ratio.learning * remaining * 100)}%`,
+    I18n.t("home.ratioPartNew", { pct: Math.round(ratio.new * remaining * 100) }),
+    I18n.t("home.ratioPartIncorrect", { pct: Math.round(ratio.incorrect * remaining * 100) }),
+    I18n.t("home.ratioPartLearning", { pct: Math.round(ratio.learning * remaining * 100) }),
   ];
   const reintroducePct = Math.round(reintroduceShare * 100);
-  if (reintroducePct > 0) parts.push(`複習已熟記 ${reintroducePct}%`);
-  hintEl.textContent = `目前配比：${parts.join("・")}`;
+  if (reintroducePct > 0) parts.push(I18n.t("home.ratioPartReintroduce", { pct: reintroducePct }));
+  hintEl.textContent = I18n.t("home.autoRatioHint", { parts: parts.join(I18n.t("common.dotSeparator")) });
 }
 
 document.getElementById("mode-picker").addEventListener("change", (e) => {
@@ -340,9 +342,9 @@ function showConfirmDialog(message, opts) {
         messageEl.appendChild(p);
       });
 
-    okBtn.textContent = options.confirmText || "確定";
+    okBtn.textContent = options.confirmText || I18n.t("common.confirm");
     okBtn.className = `btn ${options.danger ? "danger" : "primary"}`;
-    cancelBtn.textContent = options.cancelText || "取消";
+    cancelBtn.textContent = options.cancelText || I18n.t("common.cancel");
     cancelBtn.classList.toggle("hidden", !!options.hideCancel);
 
     function cleanup(result) {
@@ -423,9 +425,9 @@ async function loadVocab() {
   try {
     res = await fetch("data/vocab.json?v=__BUILD_VERSION__");
   } catch (err) {
-    throw new Error("無法載入單字資料，請確認網路連線後重新整理頁面。");
+    throw new Error(I18n.t("app.vocabLoadFailed"));
   }
-  if (!res.ok) throw new Error("無法載入單字資料，請確認網路連線後重新整理頁面。");
+  if (!res.ok) throw new Error(I18n.t("app.vocabLoadFailed"));
   VOCAB = await res.json();
   VOCAB_BY_LEVEL = { 4: [], 5: [], 6: [] };
   for (const w of VOCAB) VOCAB_BY_LEVEL[w.level].push(w);
@@ -481,7 +483,7 @@ function wordsForLevels(levels) {
 // ECDICT stores multiple part-of-speech senses joined with a literal
 // backslash-n sequence (not a real newline character) - split on that.
 function zhLines(zh) {
-  return zh ? zh.split("\\n") : ["（無中文釋義）"];
+  return zh ? zh.split("\\n") : [I18n.t("common.noChineseDefinition")];
 }
 
 function buildZhBlock(zh) {
@@ -914,9 +916,9 @@ document.getElementById("tabs").addEventListener("click", async (e) => {
     const leavingFlashcard = !!activeView && activeView.id === "view-flashcard";
     const confirmed = await showConfirmDialog(
       leavingFlashcard
-        ? "卡片複習還沒完成，確定要離開嗎？\n\n離開後這次複習會結束，下次要重新選擇數量開始。"
-        : "測驗還沒完成，確定要離開嗎？\n\n離開後這一回合會結束，下次按「開始測驗」會開始新的一回合（不會保留繼續作答）。",
-      { confirmText: "離開", danger: true }
+        ? I18n.t("test.leaveFlashcardConfirm")
+        : I18n.t("test.leaveTestConfirm"),
+      { confirmText: I18n.t("common.leave"), danger: true }
     );
     if (!confirmed) return;
     if (leavingFlashcard) flashcardInProgress = false;
@@ -933,8 +935,8 @@ function updateLevelHint() {
   const counts = levels.map((l) => `Level ${l}: ${VOCAB_BY_LEVEL[l].length}`);
   const total = wordsForLevels(levels).length;
   document.getElementById("level-count-hint").textContent = levels.length
-    ? `已選 ${total} 個單字（${counts.join("、")}）`
-    : "請至少選擇一個等級";
+    ? I18n.t("home.levelCountHint", { total: total, breakdown: counts.join(I18n.t("common.listSeparator")) })
+    : I18n.t("home.levelCountNone");
 }
 
 document.getElementById("level-picker").addEventListener("change", (e) => {
@@ -958,7 +960,7 @@ document.getElementById("rate-select").addEventListener("input", (e) => {
 document.getElementById("test-voice-btn").addEventListener("click", () => {
   if (!VOCAB.length) return;
   const sample = VOCAB[Math.floor(Math.random() * VOCAB.length)];
-  document.getElementById("test-voice-word").textContent = `範例單字：${sample.word}`;
+  document.getElementById("test-voice-word").textContent = I18n.t("home.sampleWord", { word: sample.word });
   speak(sample.word);
 });
 
@@ -966,7 +968,7 @@ function setTestMinutes(minutes) {
   const clamped = Math.min(30, Math.max(2, Math.round(minutes) || 2));
   settings.testMinutes = clamped;
   document.getElementById("test-minutes").value = String(clamped);
-  document.getElementById("test-minutes-value").textContent = `${clamped} 分鐘`;
+  document.getElementById("test-minutes-value").textContent = I18n.t("home.minutesValue", { minutes: clamped });
   saveSettings();
 }
 
@@ -1079,8 +1081,8 @@ function stopRoundTimer() {
 // was recorded, so the comparison is against genuine prior history.
 function speedNote(priorAvg, elapsedMs) {
   if (priorAvg == null) return null;
-  if (elapsedMs <= priorAvg * 0.85) return { cls: "faster", text: "⚡ 比你這個字平常的速度快！" };
-  if (elapsedMs >= priorAvg * 1.4) return { cls: "slower", text: "🐢 比這個字平常的速度慢一些，可能還沒完全記熟。" };
+  if (elapsedMs <= priorAvg * 0.85) return { cls: "faster", text: I18n.t("test.speedFaster") };
+  if (elapsedMs >= priorAvg * 1.4) return { cls: "slower", text: I18n.t("test.speedSlower") };
   return null;
 }
 
@@ -1096,7 +1098,7 @@ function renderAnswerFeedback(feedbackEl, item, correct, guess, note, state) {
   title.className = "answer-title";
   const answerWord = document.createElement("div");
   answerWord.className = "answer-word";
-  title.textContent = correct ? "✅ 正確！" : "❌ 再加油";
+  title.textContent = correct ? I18n.t("test.correctTitle") : I18n.t("test.wrongTitle");
   feedbackEl.classList.add(correct ? "correct" : "wrong");
   answerWord.textContent = `${item.word} `;
   const posSpan = document.createElement("span");
@@ -1118,8 +1120,8 @@ function renderAnswerFeedback(feedbackEl, item, correct, guess, note, state) {
     const diffEl = document.createElement("div");
     diffEl.className = "answer-diff";
     diffEl.innerHTML = `
-      <div>你的答案：${guess ? diffOpsToHtml(diffOps.typed, "diff-extra") : "(空白)"}</div>
-      <div>正確答案：${diffOpsToHtml(diffOps.correct, "diff-miss")}</div>
+      <div>${I18n.t("common.yourAnswer", { answer: guess ? diffOpsToHtml(diffOps.typed, "diff-extra") : I18n.t("common.blank") })}</div>
+      <div>${I18n.t("common.correctAnswer", { answer: diffOpsToHtml(diffOps.correct, "diff-miss") })}</div>
     `;
     feedbackEl.appendChild(diffEl);
   }
@@ -1133,7 +1135,7 @@ function renderAnswerFeedback(feedbackEl, item, correct, guess, note, state) {
   if (!correct && aiSignal && aiSignal.mnemonic) {
     const mnemonicEl = document.createElement("div");
     mnemonicEl.className = "mnemonic-note";
-    mnemonicEl.textContent = `💡 ${aiSignal.mnemonic}`;
+    mnemonicEl.textContent = I18n.t("ai.mnemonicResult", { mnemonic: aiSignal.mnemonic });
     feedbackEl.appendChild(mnemonicEl);
   }
 
@@ -1150,7 +1152,7 @@ function renderAnswerFeedback(feedbackEl, item, correct, guess, note, state) {
   // Learning, or just became Memorized, without having to go check 複習.
   const stateEl = document.createElement("span");
   stateEl.className = `state-badge ${state} answer-state`;
-  stateEl.textContent = STATE_LABELS[state];
+  stateEl.textContent = stateLabel(state);
   feedbackEl.appendChild(stateEl);
 }
 
@@ -1262,7 +1264,7 @@ function updateTestProgressDisplay() {
   }
   const total = vocabTest.list.length;
   const current = Math.min(vocabTest.index + 1, total);
-  document.getElementById("test-progress-text").textContent = `第 ${current} / ${total} 題`;
+  document.getElementById("test-progress-text").textContent = I18n.t("test.progressCount", { current: current, total: total });
   document.getElementById("test-progress-fill").style.width = `${total ? (current / total) * 100 : 0}%`;
 }
 
@@ -1399,7 +1401,7 @@ document.getElementById("start-test-btn").addEventListener("click", () => {
 function showTestWord() {
   const item = vocabTest.list[vocabTest.index];
   updateTestProgressDisplay();
-  document.getElementById("test-level-badge").textContent = `Level ${item.level}`;
+  document.getElementById("test-level-badge").textContent = I18n.t("test.levelBadge", { level: item.level });
 
   vocabTest.answered = false;
   const input = document.getElementById("test-input");
@@ -1407,7 +1409,7 @@ function showTestWord() {
   input.disabled = false;
   const submitBtn = document.getElementById("test-submit-btn");
   submitBtn.disabled = false;
-  submitBtn.textContent = "送出"; // reset from a previous question's "下一題 →"/"看結果 →" (see the submit handler below)
+  submitBtn.textContent = I18n.t("test.submitBtn"); // reset from a previous question's "下一題 →"/"看結果 →" (see the submit handler below)
   document.getElementById("test-feedback").classList.add("hidden");
   input.focus();
 
@@ -1459,7 +1461,7 @@ document.getElementById("test-form").addEventListener("submit", (e) => {
   // second submit (Enter, or clicking this now-relabeled button) to
   // advanceTest() via the `vocabTest.answered` check at the top.
   const isLast = testTimeUp() || vocabTest.index >= vocabTest.list.length - 1;
-  document.getElementById("test-submit-btn").textContent = isLast ? "看結果 →" : "下一題 →";
+  document.getElementById("test-submit-btn").textContent = isLast ? I18n.t("test.resultBtn") : I18n.t("test.nextBtn");
 });
 
 function advanceTest() {
@@ -1485,21 +1487,25 @@ function finishTest() {
   const total = vocabTest.answeredCount;
   const presented = vocabTest.list.slice(0, total);
   document.getElementById("test-summary-score").textContent = total
-    ? `答對 ${vocabTest.correctCount} / ${total} 題（${Math.round((vocabTest.correctCount / total) * 100)}%）`
-    : "這回合時間到之前還沒作答任何一題。";
+    ? I18n.t("test.scoreLine", {
+        correct: vocabTest.correctCount,
+        total: total,
+        percent: Math.round((vocabTest.correctCount / total) * 100),
+      })
+    : I18n.t("test.noAnswers");
 
   const missedDiv = document.getElementById("test-summary-missed");
   missedDiv.innerHTML = "";
   if (vocabTest.missed.length) {
     const p = document.createElement("p");
     p.className = "hint";
-    p.textContent = "拼錯的單字（點擊查看中文意思，已加入「答錯待複習」清單）：";
+    p.textContent = I18n.t("test.missedIntro");
     missedDiv.appendChild(p);
     const holder = document.createElement("div");
     missedDiv.appendChild(holder);
     renderWordChipList(holder, vocabTest.missed);
   } else if (total) {
-    missedDiv.innerHTML = `<p class="hint">全部答對，太厲害了！🎉</p>`;
+    missedDiv.innerHTML = `<p class="hint">${I18n.t("test.allCorrect")}</p>`;
   }
 
   const allDiv = document.getElementById("test-summary-all");
@@ -1507,7 +1513,7 @@ function finishTest() {
   if (total) {
     const allP = document.createElement("p");
     allP.className = "hint";
-    allP.textContent = "本回合全部單字（點擊查看中文意思）：";
+    allP.textContent = I18n.t("test.allWordsIntro");
     allDiv.appendChild(allP);
     const allHolder = document.createElement("div");
     allDiv.appendChild(allHolder);
@@ -1561,8 +1567,8 @@ document.getElementById("test-empty-home-btn").addEventListener("click", () => s
 // discarded, since finishTest() already keeps everything answered so far.
 document.getElementById("test-exit-btn").addEventListener("click", async () => {
   if (!vocabTest.inProgress) return;
-  const confirmed = await showConfirmDialog("確定要提早結束這一回合嗎？會直接顯示目前的成績。", {
-    confirmText: "結束",
+  const confirmed = await showConfirmDialog(I18n.t("test.exitConfirm"), {
+    confirmText: I18n.t("common.end"),
   });
   if (!confirmed) return;
   finishTest();
@@ -1604,28 +1610,33 @@ let flashcardCategory = "incorrect";
 let flashcardInProgress = false;
 const FLASHCARD_MIN_AMOUNT = 20;
 
-const REVIEWLIST_SORT_OPTIONS = {
-  incorrect: [
-    { value: "wrongCount", label: "答錯次數（多到少）" },
-    { value: "recent", label: "最近錯誤（新到舊）" },
-    { value: "oldest", label: "最近錯誤（舊到新）" },
-    { value: "slow", label: "反應時間（慢到快）" },
-    { value: "az", label: "字母順序 A→Z" },
-  ],
-  learning: [
-    { value: "slow", label: "反應時間（慢到快）" },
-    { value: "tries", label: "嘗試次數（多到少）" },
-    { value: "streak", label: "連續正確次數（少到多）" },
-    { value: "recent", label: "最近練習（新到舊）" },
-    { value: "oldest", label: "最近練習（舊到新）" },
-    { value: "az", label: "字母順序 A→Z" },
-  ],
-  marked: [
-    { value: "markedOld", label: "標記時間（舊到新）" },
-    { value: "markedNew", label: "標記時間（新到舊）" },
-    { value: "az", label: "字母順序 A→Z" },
-  ],
-};
+// Built as a function (not a module-scope const) so its labels are always
+// looked up in whatever locale is CURRENT at render time, rather than baked
+// in once at script-load time before a language switch could ever happen.
+function reviewlistSortOptions() {
+  return {
+    incorrect: [
+      { value: "wrongCount", label: I18n.t("review.sortWrongCount") },
+      { value: "recent", label: I18n.t("review.sortRecent") },
+      { value: "oldest", label: I18n.t("review.sortOldest") },
+      { value: "slow", label: I18n.t("review.sortSlow") },
+      { value: "az", label: I18n.t("review.sortAz") },
+    ],
+    learning: [
+      { value: "slow", label: I18n.t("review.sortSlow") },
+      { value: "tries", label: I18n.t("review.sortTries") },
+      { value: "streak", label: I18n.t("review.sortStreak") },
+      { value: "recent", label: I18n.t("review.sortRecentPractice") },
+      { value: "oldest", label: I18n.t("review.sortOldestPractice") },
+      { value: "az", label: I18n.t("review.sortAz") },
+    ],
+    marked: [
+      { value: "markedOld", label: I18n.t("review.sortMarkedOld") },
+      { value: "markedNew", label: I18n.t("review.sortMarkedNew") },
+      { value: "az", label: I18n.t("review.sortAz") },
+    ],
+  };
+}
 
 // Shared by all three category lists - not every mode is offered in every
 // dropdown, but the comparators are the same either way.
@@ -1686,8 +1697,11 @@ function buildWordCard(detail, showWrongInfo) {
   // a row to graduate back to 已熟記, so the raw streak is the accurate,
   // concrete thing to show here, not an abstract confidence score.
   const metaParts = showWrongInfo
-    ? [`已作答 ${detail.attempts} 次`, `平均反應時間 ${formatMs(detail.avgCorrectResponseMs)}`]
-    : [`連續正確 ${detail.correctStreak} / ${Logic.CONFIG.memorizedStreak}`, `平均反應時間 ${formatMs(detail.avgCorrectResponseMs)}`];
+    ? [I18n.t("review.attemptedCount", { count: detail.attempts }), I18n.t("review.avgResponseTime", { time: formatMs(detail.avgCorrectResponseMs) })]
+    : [
+        I18n.t("review.correctStreak", { streak: detail.correctStreak, total: Logic.CONFIG.memorizedStreak }),
+        I18n.t("review.avgResponseTime", { time: formatMs(detail.avgCorrectResponseMs) }),
+      ];
   // Only offered alongside the wrong-answer diff (答錯待複習) - see
   // renderMnemonicCell's own comment on why this needs actual mistake
   // history to personalize on.
@@ -1701,11 +1715,11 @@ function buildWordCard(detail, showWrongInfo) {
         <span class="word-card-level">Level ${detail.level}</span>
       </div>
       <div class="word-card-actions">
-        <button type="button" class="card-play-btn" data-word="${escapeHtml(detail.word)}" title="播放發音">🔊</button>
-        <button type="button" class="card-dict-btn" title="顯示／隱藏中文意思">📖</button>
-        <button type="button" class="card-mark-btn ${detail.marked ? "marked" : ""}" data-word="${escapeHtml(detail.word)}" title="標記／取消標記，稍後想再複習">${detail.marked ? "⭐" : "☆"}</button>
+        <button type="button" class="card-play-btn" data-word="${escapeHtml(detail.word)}" title="${I18n.t("review.playAudioTitle")}">🔊</button>
+        <button type="button" class="card-dict-btn" title="${I18n.t("review.toggleMeaningTitle")}">📖</button>
+        <button type="button" class="card-mark-btn ${detail.marked ? "marked" : ""}" data-word="${escapeHtml(detail.word)}" title="${I18n.t("review.markToggleTitle")}">${detail.marked ? "⭐" : "☆"}</button>
       </div>
-      <div class="word-card-meta muted">${metaParts.join("　・　")}</div>
+      <div class="word-card-meta muted">${metaParts.join(I18n.t("common.metaSeparator"))}</div>
       ${showWrongInfo ? `<div class="word-card-wrong">${renderWrongAnswerCell(detail)}</div>` : ""}
       ${mnemonic ? `<div class="word-card-mnemonic">${mnemonic}</div>` : ""}
       <div class="row-zh hidden">${zhLines(detail.zh).map((l) => escapeHtml(l)).join("<br>")}</div>
@@ -1716,9 +1730,9 @@ function buildPagerHtml(section, page, totalPages, totalCount) {
   if (totalPages <= 1) return "";
   return `
     <div class="row pager">
-      <button type="button" class="pager-btn" data-section="${section}" data-dir="-1" ${page <= 0 ? "disabled" : ""}>‹ 上一頁</button>
-      <span class="muted">第 ${page + 1} / ${totalPages} 頁（共 ${totalCount} 筆）</span>
-      <button type="button" class="pager-btn" data-section="${section}" data-dir="1" ${page >= totalPages - 1 ? "disabled" : ""}>下一頁 ›</button>
+      <button type="button" class="pager-btn" data-section="${section}" data-dir="-1" ${page <= 0 ? "disabled" : ""}>${I18n.t("review.pagerPrev")}</button>
+      <span class="muted">${I18n.t("review.pagerStatus", { page: page + 1, totalPages: totalPages, total: totalCount })}</span>
+      <button type="button" class="pager-btn" data-section="${section}" data-dir="1" ${page >= totalPages - 1 ? "disabled" : ""}>${I18n.t("review.pagerNext")}</button>
     </div>`;
 }
 
@@ -1795,11 +1809,11 @@ function buildFlashcardDeck(category, amount) {
 }
 
 function reviewListEmptyText() {
-  if (reviewListSearch.trim()) return "沒有符合搜尋的單字。";
-  if (reviewListCategory === "marked") return "目前沒有標記的單字，瀏覽單字時點擊 ☆ 就能加進來，稍後再回來複習。";
+  if (reviewListSearch.trim()) return I18n.t("review.emptySearch");
+  if (reviewListCategory === "marked") return I18n.t("review.emptyMarked");
   return reviewListCategory === "incorrect"
-    ? "目前沒有答錯待複習的單字，太厲害了！"
-    : "目前沒有學習中的單字，去做幾回合單字測驗吧！";
+    ? I18n.t("review.emptyIncorrect")
+    : I18n.t("review.emptyLearning");
 }
 
 // Whether to show the wrong-answer diff (vs. streak progress) is driven by
@@ -1824,16 +1838,16 @@ function showWrongInfoForCategory(category) {
 function populateReviewSortOptions() {
   const select = document.getElementById("reviewlist-sort");
   const current = reviewListSort[reviewListCategory];
-  select.innerHTML = REVIEWLIST_SORT_OPTIONS[reviewListCategory]
+  select.innerHTML = reviewlistSortOptions()[reviewListCategory]
     .map((o) => `<option value="${o.value}"${o.value === current ? " selected" : ""}>${o.label}</option>`)
     .join("");
 }
 
 function renderReviewListListView(items) {
   const hintByCategory = {
-    incorrect: "顯示正確拼法與你打錯的地方。",
+    incorrect: I18n.t("review.hintIncorrect"),
     learning: "",
-    marked: "點 ⭐ 可以取消標記；標記的單字可以是任何狀態，不會因為答對就自動移除。",
+    marked: I18n.t("review.hintMarked"),
   };
   document.getElementById("reviewlist-list-hint").textContent = hintByCategory[reviewListCategory] || "";
 
@@ -1867,10 +1881,12 @@ function renderReviewListListView(items) {
 // just the correct spelling with misses marked.
 function buildDetailedWrongAnswerHtml(detail) {
   const diffOps = Logic.diffCharsBoth(detail.lastWrongAnswer, detail.word);
-  const title = detail.recentWrongAnswers.length ? `最近幾次打錯：${detail.recentWrongAnswers.join("、")}` : "";
+  const title = detail.recentWrongAnswers.length
+    ? I18n.t("review.recentWrongTitle", { list: detail.recentWrongAnswers.join(I18n.t("common.listSeparator")) })
+    : "";
   return `<span title="${escapeHtml(title)}">
-    <div>你打的：${diffOpsToHtml(diffOps.typed, "diff-extra")}</div>
-    <div>正確答案：${diffOpsToHtml(diffOps.correct, "diff-miss")}</div>
+    <div>${I18n.t("common.youTyped", { answer: diffOpsToHtml(diffOps.typed, "diff-extra") })}</div>
+    <div>${I18n.t("common.correctAnswer", { answer: diffOpsToHtml(diffOps.correct, "diff-miss") })}</div>
   </span>`;
 }
 
@@ -1915,8 +1931,11 @@ function renderFlashcard() {
   const { detail } = items[flashcardIndex];
   const isLastOfDeck = flashcardIndex >= items.length - 1;
 
-  document.getElementById("flashcard-progress").textContent = `第 ${flashcardIndex + 1} / ${items.length} 張`;
-  document.getElementById("flashcard-level").textContent = `Level ${detail.level}`;
+  document.getElementById("flashcard-progress").textContent = I18n.t("flashcard.progressCount", {
+    current: flashcardIndex + 1,
+    total: items.length,
+  });
+  document.getElementById("flashcard-level").textContent = I18n.t("test.levelBadge", { level: detail.level });
   const wordEl = document.getElementById("flashcard-word");
   wordEl.textContent = detail.word;
   fitFlashcardWordText(wordEl);
@@ -1935,7 +1954,7 @@ function renderFlashcard() {
   revealEl.classList.remove("hidden");
   const sectionShowWrong = showWrongInfoForCategory(flashcardCategory);
   revealEl.innerHTML = buildFlashcardRevealHtml(detail, sectionShowWrong === null ? detail.state === "incorrect" : sectionShowWrong);
-  document.getElementById("flashcard-tap-hint").textContent = "點卡片可暫時隱藏意思";
+  document.getElementById("flashcard-tap-hint").textContent = I18n.t("flashcard.tapHintHidden");
 
   // Counts toward "測驗這些單字"'s "seen the whole deck" gate the moment a
   // card is DISPLAYED (see reviewDeckTestRequirement) - distinct from
@@ -1948,7 +1967,7 @@ function renderFlashcard() {
   document.getElementById("flashcard-prev-btn").disabled = flashcardIndex <= 0;
   const nextBtn = document.getElementById("flashcard-next-btn");
   nextBtn.disabled = false;
-  nextBtn.textContent = isLastOfDeck ? "完成 →" : "下一個 ›";
+  nextBtn.textContent = isLastOfDeck ? I18n.t("flashcard.doneBtn") : I18n.t("flashcard.nextBtn");
 
   // Same lag-reduction idea as the quiz's own preloadNextAudio.
   const next = items[flashcardIndex + 1];
@@ -1984,7 +2003,7 @@ function toggleFlashcardReveal() {
   const revealEl = document.getElementById("flashcard-reveal");
   const hintEl = document.getElementById("flashcard-tap-hint");
   const nowHidden = revealEl.classList.toggle("hidden");
-  hintEl.textContent = nowHidden ? "點卡片看意思" : "點卡片可暫時隱藏意思";
+  hintEl.textContent = nowHidden ? I18n.t("flashcard.tapHintShow") : I18n.t("flashcard.tapHintHidden");
 }
 
 // Ends the current flashcard-mode session (reaching past the last card, or
@@ -1997,7 +2016,9 @@ function finishFlashcardSession() {
   markCurrentCardReviewed();
   flashcardInProgress = false;
   document.getElementById("flashcard-session-body").classList.add("hidden");
-  document.getElementById("flashcard-finish-text").textContent = `已看完這 ${flashcardDeck.length} 個單字的卡片複習。`;
+  document.getElementById("flashcard-finish-text").textContent = I18n.t("flashcard.finishedText", {
+    count: flashcardDeck.length,
+  });
   document.getElementById("flashcard-finish").classList.remove("hidden");
 }
 
@@ -2077,8 +2098,8 @@ function updateFlashcardTestButtonState() {
   const ready = reviewedCount >= total;
   btn.disabled = !ready;
   hintEl.textContent = ready
-    ? `已看完這 ${total} 個單字，可以開始測驗！`
-    : `已看過 ${reviewedCount} / ${total} 個，看完全部單字就能開始測驗。`;
+    ? I18n.t("flashcard.testHintReady", { total: total })
+    : I18n.t("flashcard.testHintProgress", { count: reviewedCount, total: total });
 }
 
 // Starts a REAL quiz round (reusing the exact same vocabTest engine as the
@@ -2159,12 +2180,12 @@ function updateFlashcardLaunchHint() {
   if (!hintEl || !amountInput || !btn) return;
   const available = wordsInCategory(flashcardLaunchCategory).length;
   if (available < FLASHCARD_MIN_AMOUNT) {
-    hintEl.textContent = `這個分類目前只有 ${available} 個單字，至少需要 ${FLASHCARD_MIN_AMOUNT} 個才能開始卡片複習模式。`;
+    hintEl.textContent = I18n.t("review.launchHintTooFew", { available: available, min: FLASHCARD_MIN_AMOUNT });
     btn.disabled = true;
     return;
   }
   amountInput.max = String(available);
-  hintEl.textContent = `這個分類目前有 ${available} 個單字可複習。`;
+  hintEl.textContent = I18n.t("review.launchHintReady", { available: available });
   btn.disabled = false;
 }
 
@@ -2235,7 +2256,7 @@ document.getElementById("flashcard-exit-btn").addEventListener("click", async ()
     showView("reviewlist");
     return;
   }
-  const confirmed = await showConfirmDialog("確定要提早結束這次卡片複習嗎？", { confirmText: "結束" });
+  const confirmed = await showConfirmDialog(I18n.t("flashcard.exitConfirm"), { confirmText: I18n.t("common.end") });
   if (!confirmed) return;
   flashcardInProgress = false;
   showView("reviewlist");
@@ -2401,7 +2422,9 @@ document.getElementById("view-reviewlist").addEventListener("click", (e) => {
 
 /* ---------- Progress view ---------- */
 
-const STATE_LABELS = { new: "尚未測驗", incorrect: "答錯待複習", learning: "學習中", memorized: "已熟記" };
+function stateLabel(state) {
+  return I18n.t(`state.${state}`);
+}
 
 let progressFilter = "attempted";
 let progressSearch = "";
@@ -2467,7 +2490,7 @@ async function handleMnemonicButtonClick(button) {
     wrongAnswers = [];
   }
   button.disabled = true;
-  button.textContent = "生成中…";
+  button.textContent = I18n.t("ai.generatingBtn");
   const result = await window.VocabAi.generateMnemonic({
     word: button.dataset.word,
     pos: button.dataset.pos,
@@ -2475,7 +2498,7 @@ async function handleMnemonicButtonClick(button) {
     wrongAnswers: wrongAnswers,
   });
   button.disabled = false;
-  button.textContent = "🪄 AI 記憶法";
+  button.textContent = I18n.t("ai.mnemonicBtn");
   if (!resultEl) return;
   resultEl.classList.remove("hidden", "danger-text");
   if (!result.ok) {
@@ -2483,7 +2506,7 @@ async function handleMnemonicButtonClick(button) {
     resultEl.classList.add("danger-text");
     return;
   }
-  resultEl.textContent = `💡 ${result.mnemonic}`;
+  resultEl.textContent = I18n.t("ai.mnemonicResult", { mnemonic: result.mnemonic });
 }
 
 function formatMs(ms) {
@@ -2498,22 +2521,22 @@ function renderProgress() {
   const summary = Logic.computeProgressSummary(VOCAB, progressStore);
 
   document.getElementById("progress-grid").innerHTML = `
-    <div class="stat-box"><span class="num">${summary.totalWords}</span><span class="label">總單字數</span></div>
-    <div class="stat-box"><span class="num">${summary.totalEncountered}</span><span class="label">已練習過</span></div>
-    <div class="stat-box"><span class="num">${summary.counts.memorized}</span><span class="label">已熟記</span></div>
-    <div class="stat-box"><span class="num">${summary.counts.learning}</span><span class="label">學習中</span></div>
-    <div class="stat-box"><span class="num">${summary.counts.incorrect}</span><span class="label">答錯待複習</span></div>
-    <div class="stat-box"><span class="num">${formatPercent(summary.overallAccuracy)}</span><span class="label">整體正確率</span></div>
-    <div class="stat-box"><span class="num">${formatPercent(summary.memorizationRate)}</span><span class="label">熟記率</span></div>
-    <div class="stat-box"><span class="num">${formatPercent(summary.recentAccuracy)}</span><span class="label">近期正確率</span></div>
-    <div class="stat-box"><span class="num">${formatMs(summary.globalAverageResponseMs)}</span><span class="label">平均反應時間</span></div>
+    <div class="stat-box"><span class="num">${summary.totalWords}</span><span class="label">${I18n.t("progress.statTotalWords")}</span></div>
+    <div class="stat-box"><span class="num">${summary.totalEncountered}</span><span class="label">${I18n.t("progress.statAttempted")}</span></div>
+    <div class="stat-box"><span class="num">${summary.counts.memorized}</span><span class="label">${I18n.t("progress.statMemorized")}</span></div>
+    <div class="stat-box"><span class="num">${summary.counts.learning}</span><span class="label">${I18n.t("progress.statLearning")}</span></div>
+    <div class="stat-box"><span class="num">${summary.counts.incorrect}</span><span class="label">${I18n.t("progress.statIncorrect")}</span></div>
+    <div class="stat-box"><span class="num">${formatPercent(summary.overallAccuracy)}</span><span class="label">${I18n.t("progress.statOverallAccuracy")}</span></div>
+    <div class="stat-box"><span class="num">${formatPercent(summary.memorizationRate)}</span><span class="label">${I18n.t("progress.statMemorizationRate")}</span></div>
+    <div class="stat-box"><span class="num">${formatPercent(summary.recentAccuracy)}</span><span class="label">${I18n.t("progress.statRecentAccuracy")}</span></div>
+    <div class="stat-box"><span class="num">${formatMs(summary.globalAverageResponseMs)}</span><span class="label">${I18n.t("progress.statAvgResponseTime")}</span></div>
   `;
 
-  let trendText = "還沒有足夠的紀錄可以分析。";
+  let trendText = I18n.t("progress.trendNotEnough");
   if (summary.recentAccuracy != null) {
-    if (summary.responseTimeTrend > 0.05) trendText = "最近反應變快了，越來越熟練！";
-    else if (summary.responseTimeTrend < -0.05) trendText = "最近反應變慢了，可能需要多複習。";
-    else trendText = "最近反應時間大致穩定。";
+    if (summary.responseTimeTrend > 0.05) trendText = I18n.t("progress.trendFaster");
+    else if (summary.responseTimeTrend < -0.05) trendText = I18n.t("progress.trendSlower");
+    else trendText = I18n.t("progress.trendStable");
   }
   document.getElementById("progress-trend-hint").textContent = trendText;
 
@@ -2523,7 +2546,7 @@ function renderProgress() {
       const total = s.total || 1;
       return `
         <div class="level-stat-row">
-          <div class="level-stat-head"><span>Level ${lvl}</span><span>已熟記 ${s.memorized} / ${s.total}</span></div>
+          <div class="level-stat-head"><span>${I18n.t("test.levelBadge", { level: lvl })}</span><span>${I18n.t("progress.levelMemorized", { memorized: s.memorized, total: s.total })}</span></div>
           <div class="level-stat-bar">
             <div class="seg seg-memorized" style="width:${(s.memorized / total) * 100}%"></div>
             <div class="seg seg-incorrect" style="width:${(s.incorrect / total) * 100}%"></div>
@@ -2561,9 +2584,9 @@ function renderWrongAnswerCell(detail) {
   if (!detail.lastWrongAnswer) return "—";
   const correctHtml = buildDiffHtml(detail.lastWrongAnswer, detail.word);
   const title = detail.recentWrongAnswers.length
-    ? `最近幾次打錯：${detail.recentWrongAnswers.join("、")}`
+    ? I18n.t("review.recentWrongTitle", { list: detail.recentWrongAnswers.join(I18n.t("common.listSeparator")) })
     : "";
-  return `<span title="${escapeHtml(title)}">${correctHtml}<br><span class="muted">你打的：${escapeHtml(detail.lastWrongAnswer)}</span></span>`;
+  return `<span title="${escapeHtml(title)}">${correctHtml}<br><span class="muted">${I18n.t("common.youTyped", { answer: escapeHtml(detail.lastWrongAnswer) })}</span></span>`;
 }
 
 // A live, personalized mnemonic (vocab-ai.js's generateMnemonic), built
@@ -2586,7 +2609,7 @@ function renderMnemonicCell(detail) {
       data-pos="${escapeHtml(detail.pos || "")}"
       data-zh="${escapeHtml(zhLines(detail.zh).join("；"))}"
       data-wrong="${escapeHtml(JSON.stringify(detail.recentWrongAnswers))}"
-    >🪄 AI 記憶法</button>
+    >${I18n.t("ai.mnemonicBtn")}</button>
     <div class="hidden ai-mnemonic-result"></div>`;
 }
 
@@ -2615,7 +2638,7 @@ function renderWordTable() {
   const container = document.getElementById("progress-word-table");
   const pagerContainer = document.getElementById("progress-word-table-pager");
   if (!details.length) {
-    container.innerHTML = `<p class="hint">沒有符合條件的單字。</p>`;
+    container.innerHTML = `<p class="hint">${I18n.t("progress.noMatchingWords")}</p>`;
     pagerContainer.innerHTML = "";
     return;
   }
@@ -2628,25 +2651,25 @@ function renderWordTable() {
     .map(({ detail }) => `
       <tr>
         <td class="word-cell">
-          <button type="button" class="row-play-btn" data-word="${escapeHtml(detail.word)}" title="播放發音">🔊</button>
-          <span class="row-word-toggle" title="點擊顯示／隱藏中文意思">${escapeHtml(detail.word)}</span>
+          <button type="button" class="row-play-btn" data-word="${escapeHtml(detail.word)}" title="${I18n.t("review.playAudioTitle")}">🔊</button>
+          <span class="row-word-toggle" title="${I18n.t("progress.toggleMeaningTitle")}">${escapeHtml(detail.word)}</span>
           <span class="muted">${escapeHtml(detail.pos || "")}</span>
           <div class="row-zh hidden">${zhLines(detail.zh).map((l) => escapeHtml(l)).join("<br>")}</div>
         </td>
         <td>${detail.level}</td>
         <td>${detail.correct} / ${detail.incorrect}</td>
-        <td title="系統預測此字現在被答錯的機率，僅供 Auto 模式判斷要不要把已熟記的字抽回來複習用，不影響「狀態」欄的已熟記／學習中判定">${Math.round((detail.masteryMean || 0) * 100)}%</td>
+        <td title="${I18n.t("progress.tableRiskTitle")}">${Math.round((detail.masteryMean || 0) * 100)}%</td>
         <td>${formatMs(detail.avgCorrectResponseMs)}</td>
         <td>${renderWrongAnswerCell(detail)}</td>
-        <td><span class="state-badge ${detail.state}">${STATE_LABELS[detail.state]}</span></td>
+        <td><span class="state-badge ${detail.state}">${stateLabel(detail.state)}</span></td>
       </tr>`)
     .join("");
 
   container.innerHTML = `
-    <p class="hint">從未答錯的字，答對一次就算「已熟記」；答錯過的字則需要連續答對 ${Logic.CONFIG.memorizedStreak} 次才會回到「已熟記」，答錯一次就歸零重算。已熟記的字理論上不會再出現，但 Auto 模式會依「風險預測」欄位不定期抽幾個風險較高的已熟記單字回來複習，確認沒有忘記。滑鼠移到「最近錯誤」可看更多紀錄。</p>
+    <p class="hint">${I18n.t("progress.tableExplainer", { streak: Logic.CONFIG.memorizedStreak })}</p>
     <div class="word-table-wrap">
       <table class="word-table">
-        <thead><tr><th>單字</th><th>等級</th><th>對／錯</th><th title="Auto 模式用來判斷是否該把已熟記的字抽回來複習的風險預測分數">風險預測</th><th>平均反應時間</th><th>最近錯誤</th><th>狀態</th></tr></thead>
+        <thead><tr><th>${I18n.t("progress.colWord")}</th><th>${I18n.t("progress.colLevel")}</th><th>${I18n.t("progress.colCorrectIncorrect")}</th><th title="${I18n.t("progress.tableRiskHeaderTitle")}">${I18n.t("progress.colRisk")}</th><th>${I18n.t("progress.colAvgResponse")}</th><th>${I18n.t("progress.colRecentMistakes")}</th><th>${I18n.t("progress.colState")}</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
@@ -2688,7 +2711,7 @@ document.getElementById("export-progress-btn").addEventListener("click", () => {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-  showImportStatus(`已匯出備份檔（共 ${Object.keys(progressStore).length} 個單字的紀錄）。`, false);
+  showImportStatus(I18n.t("backup.exportSuccess", { count: Object.keys(progressStore).length }), false);
 });
 
 document.getElementById("import-progress-btn").addEventListener("click", () => {
@@ -2706,12 +2729,12 @@ document.getElementById("import-progress-file").addEventListener("change", (e) =
     try {
       parsed = JSON.parse(reader.result);
     } catch (err) {
-      showImportStatus("匯入失敗：這不是有效的 JSON 備份檔。", true);
+      showImportStatus(I18n.t("backup.importInvalidJson"), true);
       return;
     }
     const importedProgress = parsed && typeof parsed === "object" ? parsed.progress : null;
     if (!importedProgress || typeof importedProgress !== "object") {
-      showImportStatus("匯入失敗：檔案格式不正確（找不到學習紀錄內容）。", true);
+      showImportStatus(I18n.t("backup.importBadFormat"), true);
       return;
     }
 
@@ -2720,19 +2743,17 @@ document.getElementById("import-progress-file").addEventListener("change", (e) =
     // Checked before the confirm dialog below: there's no point asking
     // "are you sure" for an import that's about to be refused either way.
     if (window.VocabSync && window.VocabSync.wouldRegressProgress(importedProgress)) {
-      showImportStatus(
-        "匯入失敗：這份備份的練習紀錄比目前同步中的進度少，為了避免覆蓋掉其他裝置已經累積的進度，已取消匯入。" +
-          "如果你確定要用這份備份取代目前進度，請先到上面「跨裝置同步」按「解除同步」，再重新匯入一次。",
-        true
-      );
+      showImportStatus(I18n.t("backup.importRegressionRefused"), true);
       return;
     }
 
     const wordCount = Object.keys(importedProgress).length;
+    const exportedAtText = parsed.exportedAt
+      ? I18n.t("backup.importConfirmExportedAt", { date: parsed.exportedAt.slice(0, 10) })
+      : "";
     const confirmed = await showConfirmDialog(
-      `即將匯入備份檔（${wordCount} 個單字的紀錄${parsed.exportedAt ? `，匯出於 ${parsed.exportedAt.slice(0, 10)}` : ""}）。\n\n` +
-      "這會「取代」目前這台裝置瀏覽器裡的全部學習紀錄，無法復原，確定要繼續嗎？",
-      { confirmText: "匯入", danger: true }
+      I18n.t("backup.importConfirm", { count: wordCount, exportedAt: exportedAtText }),
+      { confirmText: I18n.t("common.import"), danger: true }
     );
     if (!confirmed) return;
 
@@ -2747,15 +2768,15 @@ document.getElementById("import-progress-file").addEventListener("change", (e) =
     catchUpMasteryModelIfNeeded();
     saveProgress();
     renderProgress();
-    showImportStatus(`已匯入 ${wordCount} 個單字的學習紀錄。`, false);
+    showImportStatus(I18n.t("backup.importSuccess", { count: wordCount }), false);
   };
-  reader.onerror = () => showImportStatus("匯入失敗：無法讀取檔案。", true);
+  reader.onerror = () => showImportStatus(I18n.t("backup.importReadError"), true);
   reader.readAsText(file);
 });
 
 document.getElementById("reset-progress-btn").addEventListener("click", async () => {
-  const confirmed = await showConfirmDialog("確定要清除全部學習紀錄嗎？此動作無法復原。", {
-    confirmText: "清除",
+  const confirmed = await showConfirmDialog(I18n.t("backup.resetConfirm"), {
+    confirmText: I18n.t("common.clear"),
     danger: true,
   });
   if (!confirmed) return;
@@ -2796,7 +2817,7 @@ async function checkForUpdate() {
   const statusEl = document.getElementById("update-status");
   btn.disabled = true;
   statusEl.className = "update-status";
-  statusEl.textContent = "檢查中...";
+  statusEl.textContent = I18n.t("footer.checking");
 
   try {
     // cache: "no-store" plus a one-off query string defeats both the
@@ -2817,11 +2838,11 @@ async function checkForUpdate() {
 
     if (!isRealVersion(remoteVersion) || !isRealVersion(APP_VERSION) || remoteVersion === APP_VERSION) {
       statusEl.classList.add("up-to-date");
-      statusEl.textContent = "✅ 目前已是最新版本";
+      statusEl.textContent = I18n.t("footer.upToDate");
       btn.disabled = false;
     } else {
       statusEl.classList.add("updating");
-      statusEl.textContent = "🔄 發現新版本，正在重新整理...";
+      statusEl.textContent = I18n.t("footer.foundNewVersion");
       sessionStorage.setItem(JUST_UPDATED_KEY, remoteVersion);
       // A stale service worker cache (see sw.js) is exactly what would
       // otherwise make this "found a new version" reload land right back
@@ -2851,7 +2872,7 @@ async function checkForUpdate() {
     }
   } catch (e) {
     statusEl.classList.add("error");
-    statusEl.textContent = "⚠️ 檢查失敗，請確認網路連線";
+    statusEl.textContent = I18n.t("footer.checkFailed");
     btn.disabled = false;
   }
 }
@@ -2865,7 +2886,7 @@ async function init() {
   const justUpdated = sessionStorage.getItem(JUST_UPDATED_KEY);
   if (justUpdated) {
     sessionStorage.removeItem(JUST_UPDATED_KEY);
-    showUpdateToast(`✅ 已更新到最新版本（${justUpdated}）`);
+    showUpdateToast(I18n.t("footer.updatedToVersion", { version: justUpdated }));
   }
 
   await Promise.all([loadVocab(), loadAiSignals()]);
@@ -2920,7 +2941,7 @@ async function init() {
 // which fixes itself the moment the network comes back, with no need for
 // the user to notice or tap anything.
 init().catch((err) => {
-  showInitErrorBanner((err && err.message) || "應用程式載入失敗，請確認網路連線後重新整理頁面。");
+  showInitErrorBanner((err && err.message) || I18n.t("app.loadFailed"));
   window.addEventListener("online", () => location.reload(), { once: true });
 });
 
@@ -2932,7 +2953,7 @@ function showInitErrorBanner(message) {
   messageEl.textContent = message;
   const retryBtn = document.createElement("button");
   retryBtn.type = "button";
-  retryBtn.textContent = "🔄 重新整理";
+  retryBtn.textContent = I18n.t("app.reload");
   retryBtn.addEventListener("click", () => location.reload());
   banner.appendChild(messageEl);
   banner.appendChild(retryBtn);
