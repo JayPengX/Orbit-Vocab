@@ -51,7 +51,20 @@ VOCAB_PATH = ROOT / "data" / "vocab.json"
 SIGNALS_PATH = ROOT / "data" / "ai_signals.json"
 
 API_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-DEFAULT_MODEL = "gemini-3.6-flash"
+# NOT gemini-3.6-flash: the sibling jaypengx-collab/shared-proxy repo's
+# worker.js live-tested that model against its own schema-constrained
+# (responseSchema) requests and found it misbehaves specifically under that
+# combination - a single request burned 24576 output tokens over 94 seconds
+# before coming back truncated (MAX_TOKENS) and unusable, and a separate
+# multi-item request came back fast but only populated 1 of 12 items. This
+# script sends the exact same combination (responseSchema + a batch of ~45
+# items per call), so it was exposed to the same failure mode on every one of
+# its own MAX_RETRIES attempts - each retry potentially re-paying that same
+# ~94s/24k-token cost for a result that still comes back unusable, and
+# clean_item() would then silently drop most of a truncated batch's words
+# rather than surface the real cause. gemini-3.7-flash is the model worker.js
+# confirmed correct and fast on this exact prompt+schema shape.
+DEFAULT_MODEL = "gemini-3.7-flash"
 DEFAULT_BATCH_SIZE = 45
 DEFAULT_CONCURRENCY = 3
 MAX_RETRIES = 4
