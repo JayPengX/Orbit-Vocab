@@ -432,7 +432,7 @@ async function loadVocab() {
   VOCAB_BY_LEVEL = { 4: [], 5: [], 6: [] };
   for (const w of VOCAB) VOCAB_BY_LEVEL[w.level].push(w);
   VOCAB_INDEX = buildVocabIndex();
-  document.getElementById("footer-total").textContent = VOCAB.length;
+  document.getElementById("footer-source").textContent = I18n.t("footer.source", { total: VOCAB.length });
 
   // Backward-compatible migration: upgrades legacy Leitner-box entries (and
   // fills in any newly-added fields on already-current entries) without
