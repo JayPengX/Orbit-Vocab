@@ -2889,6 +2889,12 @@ async function init() {
     showUpdateToast(I18n.t("footer.updatedToVersion", { version: justUpdated }));
   }
 
+  // Reflect saved settings onto the home-screen controls BEFORE awaiting
+  // the vocab download - otherwise the speed/duration/ratio sliders show
+  // index.html's hard-coded defaults for as long as that fetch takes, then
+  // visibly jump to the saved values. Safe pre-vocab: the auto-ratio hint
+  // is a no-op until VOCAB is loaded, and gets filled in by the call below.
+  applySettingsToUI();
   await Promise.all([loadVocab(), loadAiSignals()]);
   updateLevelHint();
   applySettingsToUI(); // also refreshes the auto-mode ratio hint via applyModeToUI
