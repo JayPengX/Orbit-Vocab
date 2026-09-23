@@ -63,7 +63,7 @@ let progressStore = loadJSON(PROGRESS_KEY, {});
 // are the old fixed 80/10/10 and 0/70/30 presets, and "advanced" is the
 // user's own custom wordRatio sliders below.
 let settings = Object.assign(
-  { levels: [4, 5, 6], rate: 0.9, testMinutes: 10, mode: "auto", wordRatio: { new: 80, incorrect: 10, learning: 10 } },
+  { levels: [4, 5, 6], rate: 1, testMinutes: 10, mode: "auto", wordRatio: { new: 80, incorrect: 10, learning: 10 } },
   loadJSON(SETTINGS_KEY, {})
 );
 
