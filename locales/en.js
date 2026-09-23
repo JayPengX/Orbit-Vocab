@@ -6,6 +6,15 @@
 // locales/zh-TW.js should exist here too - i18n.js falls back to zh-TW
 // for anything missing), rename the registry key below, and add a
 // <script> tag for it in index.html before i18n.js's own <script> tag.
+//
+// WARNING: this app's tab bar/chips/buttons (.tab-btn, .filter-chip,
+// .level-chip - see style.css) use flexible widths and flex-wrap, not the
+// fixed-column layout that bit the sibling Orbit project (see that repo's
+// src/constants.js WEEKDAY_LABELS comment for what that bug actually
+// looked like), so there's no known analogous bug here today. Still, no
+// automated test renders this app's actual layout - always check a real
+// screenshot after adding a language before calling it done, especially
+// for anything short and buttonlike.
 (function (root) {
   var strings = {
   // ---- App shell / tabs ----
