@@ -88,7 +88,15 @@ self.addEventListener("fetch", (event) => {
 // offline fallback below); fall back to whatever's cached both when the
 // network request fails outright and when it's simply taking too long.
 async function networkFirst(request) {
-  const fetchPromise = fetch(request);
+  // `cache: "no-cache"` revalidates with the server (a cheap 304 when
+  // unchanged) instead of letting the browser's HTTP cache hand back a
+  // stale index.html - GitHub Pages sends max-age=600, so without this a
+  // fresh deploy could keep showing the previous page for up to 10
+  // minutes. Fetched by URL rather than by `request` itself because a
+  // navigate-mode Request can't be re-issued with a RequestInit;
+  // `redirect: "manual"` keeps a redirect (e.g. a missing trailing slash)
+  // as the opaque redirect response navigations require.
+  const fetchPromise = fetch(request.url, { cache: "no-cache", credentials: "same-origin", redirect: "manual" });
   fetchPromise
     .then((response) => {
       if (response && response.ok) {
