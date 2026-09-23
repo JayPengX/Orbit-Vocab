@@ -71,17 +71,6 @@ body {
   flex-wrap: wrap;
 }
 
-.language-select {
-  margin-top: 10px;
-  background: var(--secondary);
-  color: var(--secondary-text);
-  border: none;
-  border-radius: 999px;
-  padding: 8px 14px;
-  font-size: 0.85rem;
-  cursor: pointer;
-}
-
 .tab-btn {
   background: var(--secondary);
   color: var(--secondary-text);

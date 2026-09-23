@@ -32,15 +32,6 @@
   // detectLocale()'s fallback value, not just STRINGS' first entry.
   const DEFAULT_LOCALE = "zh-TW";
 
-  // Locales offered in the language switcher, in display order - a third
-  // locale is added here (its own {code, nativeName}) plus one more entry in
-  // STRINGS below; nothing else in this file (or app.js/sync.js's own t()
-  // calls) needs to change.
-  const LOCALES = [
-    { code: "zh-TW", nativeName: "繁體中文" },
-    { code: "en", nativeName: "English" },
-  ];
-
   const STRINGS = {
     "zh-TW": {
       // ---- App shell / tabs ----
@@ -354,9 +345,6 @@
       "sync.deleting": "正在刪除同步…",
       "sync.deleteFailed": "刪除失敗：{message}",
       "sync.deletedAllDisconnected": "已整個刪除同步，所有裝置都已斷開連結。",
-
-      // ---- Language switcher ----
-      "header.languageLabel": "語言",
     },
 
     en: {
@@ -684,30 +672,8 @@
       "sync.deleting": "Deleting sync…",
       "sync.deleteFailed": "Delete failed: {message}",
       "sync.deletedAllDisconnected": "Sync deleted entirely — all devices have been disconnected.",
-
-      // ---- Language switcher ----
-      "header.languageLabel": "Language",
     },
   };
-
-  const LOCALE_KEY = "vocab_locale_v1";
-
-  function readStoredLocale() {
-    try {
-      return localStorage.getItem(LOCALE_KEY) || "";
-    } catch (e) {
-      return "";
-    }
-  }
-
-  function writeStoredLocale(locale) {
-    try {
-      localStorage.setItem(LOCALE_KEY, locale);
-    } catch (e) {
-      /* localStorage unavailable (private browsing, etc.) - the choice just
-         won't survive a reload; nothing else to do about it here. */
-    }
-  }
 
   // Maps navigator.language/languages (e.g. "zh-Hant-TW", "zh-CN", "en-GB")
   // to one of this app's supported locales - only the primary subtag
@@ -742,24 +708,15 @@
     return DEFAULT_LOCALE;
   }
 
-  // A manual override (see setLocale) always wins over detection - once a
-  // learner has actually picked a language, reopening the app must keep
-  // showing that, not silently flip back the moment their OS/browser
-  // language looks different.
-  let currentLocale = (function () {
-    const stored = readStoredLocale();
-    if (stored && STRINGS[stored]) return stored;
-    return detectLocale();
-  })();
+  // No manual override - always follows the device/browser language live,
+  // the same as orbit and match-find. Re-evaluated fresh on every page
+  // load (detectLocale() reads navigator.language at call time), so
+  // changing the device's language and reopening the app just works,
+  // with nothing to get "stuck" on an old choice.
+  const currentLocale = detectLocale();
 
   function getLocale() {
     return currentLocale;
-  }
-
-  function setLocale(locale) {
-    if (!STRINGS[locale]) return;
-    currentLocale = locale;
-    writeStoredLocale(locale);
   }
 
   // Substitutes {name}-style placeholders in `str` from `params` (e.g.
@@ -783,11 +740,9 @@
 
   return {
     STRINGS: STRINGS,
-    LOCALES: LOCALES,
     DEFAULT_LOCALE: DEFAULT_LOCALE,
     t: t,
     detectLocale: detectLocale,
     getLocale: getLocale,
-    setLocale: setLocale,
   };
 });

@@ -37,7 +37,6 @@
     <button class="tab-btn" data-view="reviewlist" data-i18n="tabs.review">複習</button>
     <button class="tab-btn" data-view="progress" data-i18n="tabs.progress">學習進度</button>
   </nav>
-  <select id="language-select" class="language-select" aria-label="Language"></select>
 </header>
 
 <main id="app">
@@ -400,8 +399,8 @@
 <script>
   (function () {
     // Applies i18n.js translations to every static data-i18n[-placeholder|
-    // -title] element in this page, populates the language switcher, and
-    // sets <html lang> to match - runs once, right after i18n.js loads
+    // -title] element in this page, and sets <html lang> to match - runs
+    // once, right after i18n.js loads
     // (before app.js/sync.js's own dynamic renders, which call I18n.t()
     // directly instead of relying on this scan). Kept inline (not in
     // i18n.js itself) since it only touches static markup specific to this
@@ -420,27 +419,7 @@
       });
     }
 
-    function populateLanguageSelect() {
-      const select = document.getElementById("language-select");
-      if (!select) return;
-      select.innerHTML = window.I18n.LOCALES.map(
-        (loc) => `<option value="${loc.code}">${loc.nativeName}</option>`
-      ).join("");
-      select.value = window.I18n.getLocale();
-      select.addEventListener("change", () => {
-        window.I18n.setLocale(select.value);
-        // A full reload is the simplest way to guarantee every already-
-        // rendered dynamic string (test feedback, review cards, progress
-        // table, sync status text, etc. - all built by app.js/sync.js at
-        // runtime, not just this static scan) picks up the new locale
-        // consistently, rather than re-implementing a live re-render for
-        // every one of those call sites.
-        location.reload();
-      });
-    }
-
     applyStaticTranslations();
-    populateLanguageSelect();
   })();
 </script>
 </body>
