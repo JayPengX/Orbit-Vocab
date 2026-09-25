@@ -221,7 +221,7 @@ local `localStorage` throughout, nothing is lost while sync is temporarily unava
 Cloudflare Worker already deployed by the standalone
 [JayPengX/shared-proxy](https://github.com/JayPengX/shared-proxy) repo (see
 that repo's `worker.js`, the `/vocab-sync` route — the same Worker also serves the sibling
-[Orbit](https://github.com/JayPengX/Orbit) project's own schedule sync) as a shared
+[Orbit Class](https://github.com/JayPengX/Orbit-Class) project's own schedule sync) as a shared
 server-side proxy, storing into a separate Firestore collection that doesn't touch Orbit's
 own data. Unlike Orbit's schedule sync, there is no "admin / receive-only" role split and no
 separate, less-sensitive code meant for public sharing here — a single sync passcode always
@@ -522,7 +522,7 @@ automatically builds and deploys the site to GitHub Pages (requires setting the 
 - [JayPengX/Shared-Proxy](https://github.com/JayPengX/Shared-Proxy) — the
   shared Cloudflare Worker backend that powers cross-device sync and AI mnemonic generation
   for this project.
-- [JayPengX/Orbit](https://github.com/JayPengX/Orbit) and
+- [JayPengX/Orbit-Class](https://github.com/JayPengX/Orbit-Class) and
   [JayPengX/Match-Find](https://github.com/JayPengX/Match-Find) — sibling
   sites that share the same Worker infrastructure.
 
