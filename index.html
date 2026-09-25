@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<meta name="theme-color" content="#3b5bdb" />
+<meta name="theme-color" content="#5655e8" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -31,7 +31,12 @@
 </head>
 <body>
 <header class="topbar">
-  <h1>🔊 <span data-i18n="app.title">英單力</span> <span class="muted" data-i18n="app.subtitle">高中英文單字 Level 4–6</span></h1>
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 32 32" width="32" height="32"><rect width="32" height="32" rx="9" fill="url(#brand-grad)"/><path d="M9 12.5h3l4-3.5v14l-4-3.5H9z" fill="#fff"/><path d="M19.5 12.2a5 5 0 0 1 0 7.6M22.3 9.6a9 9 0 0 1 0 12.8" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round"/><defs><linearGradient id="brand-grad" x1="0" y1="0" x2="32" y2="32"><stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs></svg>
+    </span>
+    <h1><span class="brand-name" data-i18n="app.title">英單力</span><span class="brand-sub" data-i18n="app.subtitle">高中英文單字 Level 4–6</span></h1>
+  </div>
   <nav class="tabs" id="tabs">
     <button class="tab-btn active" data-view="home" data-i18n="tabs.home">首頁</button>
     <button class="tab-btn" data-view="reviewlist" data-i18n="tabs.review">複習</button>
@@ -43,6 +48,13 @@
 
   <!-- HOME / SETUP -->
   <section id="view-home" class="view active">
+    <div class="card hero-card">
+      <p class="hero-eyebrow" data-i18n="home.heroEyebrow">今日練習</p>
+      <h2 class="hero-title" data-i18n="home.heroTitle">聽發音，拼出單字</h2>
+      <p class="hero-meta" id="hero-meta"></p>
+      <button class="btn primary hero-start" id="start-test-btn" data-i18n="home.startTestBtn">📝 開始測驗</button>
+    </div>
+
     <div class="card">
       <h2 data-i18n="home.rateTitle">語速設定</h2>
       <div class="row">
@@ -85,29 +97,27 @@
         <button type="button" class="btn secondary small" data-minutes="30">30</button>
       </div>
       <p class="hint" data-i18n="home.durationHint">時間到會自動結束並顯示成績，不用自己抓題數。</p>
+    </div>
 
+    <div class="card">
       <h2 data-i18n="home.modeTitle">測驗模式</h2>
       <p class="hint" data-i18n="home.modeHint">選擇這回合怎麼出題。已熟記的單字不會出現。</p>
       <div class="mode-picker" id="mode-picker">
         <label class="mode-chip">
           <input type="radio" name="test-mode" value="auto" checked>
-          <span data-i18n="home.modeAutoLabel">⚖️ 自動平衡（預設）</span>
-          <small data-i18n="home.modeAutoDesc">依你目前的學習狀況自動調整。</small>
+          <span class="mode-text"><span data-i18n="home.modeAutoLabel">⚖️ 自動平衡（預設）</span><small data-i18n="home.modeAutoDesc">依你目前的學習狀況自動調整。</small></span>
         </label>
         <label class="mode-chip">
           <input type="radio" name="test-mode" value="new">
-          <span data-i18n="home.modeNewLabel">🆕 新字優先</span>
-          <small data-i18n="home.modeNewDesc">大部分出新字，少量複習。</small>
+          <span class="mode-text"><span data-i18n="home.modeNewLabel">🆕 新字優先</span><small data-i18n="home.modeNewDesc">大部分出新字，少量複習。</small></span>
         </label>
         <label class="mode-chip">
           <input type="radio" name="test-mode" value="review">
-          <span data-i18n="home.modeReviewLabel">🔁 只複習</span>
-          <small data-i18n="home.modeReviewDesc">只複習舊字，不出新字。</small>
+          <span class="mode-text"><span data-i18n="home.modeReviewLabel">🔁 只複習</span><small data-i18n="home.modeReviewDesc">只複習舊字，不出新字。</small></span>
         </label>
         <label class="mode-chip">
           <input type="radio" name="test-mode" value="advanced">
-          <span data-i18n="home.modeAdvancedLabel">🛠️ 進階：自訂比例</span>
-          <small data-i18n="home.modeAdvancedDesc">自己設定出題比例。</small>
+          <span class="mode-text"><span data-i18n="home.modeAdvancedLabel">🛠️ 進階：自訂比例</span><small data-i18n="home.modeAdvancedDesc">自己設定出題比例。</small></span>
         </label>
       </div>
       <p class="hint" id="auto-ratio-hint"></p>
@@ -146,10 +156,6 @@
         </div>
         <p class="hint" id="level-count-hint"></p>
       </details>
-
-      <div class="row actions">
-        <button class="btn primary" id="start-test-btn" data-i18n="home.startTestBtn">📝 開始測驗</button>
-      </div>
     </div>
   </section>
 

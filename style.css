@@ -1,21 +1,32 @@
 :root {
-  --bg: #f5f6fa;
+  --bg: #f3f4fa;
+  --bg-glow-1: rgba(99, 102, 241, 0.10);
+  --bg-glow-2: rgba(168, 85, 247, 0.08);
   --surface: #ffffff;
-  --text: #1c1e26;
-  --muted: #6b7280;
-  --border: #e2e4ea;
-  --primary: #3b5bdb;
+  --surface-2: #f4f5fb;
+  --text: #161827;
+  --muted: #636981;
+  --border: #e3e5ef;
+  --primary: #5655e8;
+  --primary-2: #9454f4;
+  --primary-soft: rgba(86, 85, 232, 0.10);
   --primary-text: #ffffff;
-  --secondary: #eef0f6;
-  --secondary-text: #1c1e26;
-  --danger: #e03131;
-  --good: #2f9e44;
-  --warn: #f08c00;
-  --state-new: #9096a5;
+  --gradient: linear-gradient(135deg, #5b5bf0 0%, #8b5cf6 55%, #a855f7 100%);
+  /* Kept for the few rules (and older markup) that still name them. */
+  --secondary: var(--surface-2);
+  --secondary-text: var(--text);
+  --danger: #e03e45;
+  --good: #1f9a54;
+  --warn: #e07d0a;
+  --state-new: #9096a8;
   --state-learning: #f08c00;
-  --state-incorrect: #e03131;
-  --state-memorized: #2f9e44;
-  --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+  --state-incorrect: #e03e45;
+  --state-memorized: #22a45d;
+  --shadow: 0 1px 2px rgba(22, 24, 39, 0.04), 0 6px 20px -8px rgba(22, 24, 39, 0.10);
+  --shadow-lift: 0 2px 4px rgba(22, 24, 39, 0.05), 0 14px 32px -12px rgba(86, 85, 232, 0.35);
+  --radius: 20px;
+  --radius-sm: 12px;
+  --nav-h: 64px;
   /* Almost every font-size and quite a few paddings in this file are `rem`,
      so this one number scales the whole app's text and much of its spacing
      together - bumped up from the 16px browser default because on a phone
@@ -28,14 +39,23 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #14161c;
-    --surface: #1d2028;
-    --text: #e8e9ee;
-    --muted: #9096a5;
-    --border: #2c303c;
-    --secondary: #2a2e3a;
-    --secondary-text: #e8e9ee;
-    --shadow: 0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
+    --bg: #0e1016;
+    --bg-glow-1: rgba(99, 102, 241, 0.16);
+    --bg-glow-2: rgba(168, 85, 247, 0.10);
+    --surface: #171a24;
+    --surface-2: #212533;
+    --text: #eceef6;
+    --muted: #9ca2b8;
+    --border: #2a2f3f;
+    --primary: #8483ff;
+    --primary-2: #b084ff;
+    --primary-soft: rgba(132, 131, 255, 0.16);
+    --danger: #ff6b70;
+    --good: #3ccf7f;
+    --warn: #ffa53d;
+    --state-new: #6f7690;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px -10px rgba(0, 0, 0, 0.55);
+    --shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.4), 0 14px 32px -12px rgba(120, 110, 255, 0.45);
   }
 }
 
@@ -43,48 +63,185 @@
 
 body {
   margin: 0;
-  background: var(--bg);
+  min-height: 100vh;
+  background:
+    radial-gradient(900px 480px at 0% -10%, var(--bg-glow-1), transparent 70%),
+    radial-gradient(700px 420px at 100% 0%, var(--bg-glow-2), transparent 70%),
+    var(--bg);
+  background-attachment: fixed;
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Noto Sans TC", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
   padding-bottom: 40px;
 }
 
+/* ---------- Header + tabs ---------- */
+
+/* Same 720px column as #app (plus its 16px gutter), so the logo lines up
+   with the cards' left edge on a wide screen instead of sitting 16px out. */
 .topbar {
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  padding: 16px max(16px, calc((100% - 720px) / 2));
   position: sticky;
   top: 0;
   z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px max(16px, calc((100% - 720px) / 2 + 16px));
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  -webkit-backdrop-filter: saturate(1.4) blur(14px);
+  backdrop-filter: saturate(1.4) blur(14px);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.brand-mark {
+  flex: none;
+  display: flex;
+  filter: drop-shadow(0 4px 10px rgba(99, 102, 241, 0.35));
 }
 
 .topbar h1 {
-  margin: 0 0 12px 0;
-  font-size: 1.25rem;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.brand-name {
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.brand-sub {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .muted { color: var(--muted); font-weight: 400; }
 
 .tabs {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
 }
 
 .tab-btn {
-  background: var(--secondary);
-  color: var(--secondary-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: transparent;
+  color: var(--muted);
   border: none;
   border-radius: 999px;
-  padding: 11px 18px;
-  font-size: 0.95rem;
+  padding: 9px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
 }
 
-.tab-btn.active {
-  background: var(--primary);
-  color: var(--primary-text);
+/* Icons are drawn with a CSS mask rather than markup inside the buttons,
+   because index.html's static i18n pass replaces each button's whole
+   textContent. */
+.tab-btn::before {
+  content: "";
+  width: 18px;
+  height: 18px;
+  flex: none;
+  background: currentColor;
+  -webkit-mask: var(--tab-icon) center / contain no-repeat;
+  mask: var(--tab-icon) center / contain no-repeat;
 }
+.tab-btn[data-view="home"] {
+  --tab-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z'/%3E%3C/svg%3E");
+}
+.tab-btn[data-view="reviewlist"] {
+  --tab-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='6' width='14' height='15' rx='2'/%3E%3Cpath d='M7 3h12a2 2 0 0 1 2 2v12'/%3E%3C/svg%3E");
+}
+.tab-btn[data-view="progress"] {
+  --tab-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20V11M10 20V4M16 20v-6M22 20H2'/%3E%3C/svg%3E");
+}
+
+.tab-btn:hover { color: var(--text); }
+
+.tab-btn.active,
+/* A test or flashcard round is its own view with no tab of its own - keep
+   the tab it was started from lit, instead of none at all. */
+body:has(#view-test.active) .tab-btn[data-view="home"],
+body:has(#view-flashcard.active) .tab-btn[data-view="reviewlist"] {
+  background: var(--surface);
+  color: var(--primary);
+  box-shadow: 0 1px 3px rgba(22, 24, 39, 0.12);
+}
+
+/* Phone: the tabs move to an app-style bottom bar, in thumb reach. */
+@media (max-width: 719px) {
+  body { padding-bottom: calc(var(--nav-h) + 28px + env(safe-area-inset-bottom, 0px)); }
+
+  /* A backdrop-filter makes the header the containing block for its fixed
+     children, which would pin the bottom bar to the header instead of the
+     screen - so the phone header is solid instead of frosted. */
+  .topbar {
+    background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .tabs {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    gap: 0;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+    border-radius: 0;
+    border: none;
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    -webkit-backdrop-filter: saturate(1.4) blur(16px);
+    backdrop-filter: saturate(1.4) blur(16px);
+  }
+
+  .tab-btn {
+    flex: 1;
+    flex-direction: column;
+    gap: 3px;
+    padding: 7px 4px;
+    border-radius: 14px;
+    font-size: 0.68rem;
+  }
+
+  .tab-btn::before { width: 22px; height: 22px; }
+
+  .tab-btn.active,
+  body:has(#view-test.active) .tab-btn[data-view="home"],
+  body:has(#view-flashcard.active) .tab-btn[data-view="reviewlist"] {
+    background: var(--primary-soft);
+    box-shadow: none;
+  }
+
+  .update-toast { bottom: calc(var(--nav-h) + 16px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* ---------- Layout + cards ---------- */
 
 #app {
   max-width: 720px;
@@ -93,24 +250,124 @@ body {
 }
 
 .view { display: none; }
-.view.active { display: block; }
+.view.active { display: block; animation: view-in 0.22s ease; }
+
+@keyframes view-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
 
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 24px;
+  border-radius: var(--radius);
+  padding: 22px;
   box-shadow: var(--shadow);
 }
 
 .card + .card { margin-top: 16px; }
 
 .card h2 {
-  font-size: 1rem;
-  margin: 24px 0 10px 0;
-  color: var(--muted);
+  font-size: 1.02rem;
+  font-weight: 700;
+  margin: 26px 0 10px 0;
+  color: var(--text);
+  letter-spacing: -0.005em;
 }
 .card h2:first-child { margin-top: 0; }
+
+/* ---------- Home: start card ---------- */
+
+.hero-card {
+  position: relative;
+  overflow: hidden;
+  border: none;
+  color: #fff;
+  background: var(--gradient);
+  box-shadow: var(--shadow-lift);
+  padding: 24px 22px 22px;
+}
+
+/* Two soft light blobs, purely decorative. */
+.hero-card::before,
+.hero-card::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  pointer-events: none;
+}
+.hero-card::before { width: 220px; height: 220px; right: -70px; top: -90px; }
+.hero-card::after { width: 120px; height: 120px; right: 70px; bottom: -70px; background: rgba(255, 255, 255, 0.08); }
+
+.hero-eyebrow {
+  position: relative;
+  margin: 0 0 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.card h2.hero-title {
+  position: relative;
+  margin: 0 0 14px;
+  font-size: 1.45rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: #fff;
+  letter-spacing: -0.015em;
+}
+
+.hero-meta {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 18px;
+}
+
+.hero-chip {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  white-space: nowrap;
+}
+
+.btn.primary.hero-start {
+  position: relative;
+  width: 100%;
+  padding: 16px 22px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  background: #fff;
+  color: #4d45d8;
+  box-shadow: 0 8px 20px -8px rgba(20, 10, 80, 0.5);
+}
+
+@media (min-width: 560px) {
+  .hero-card {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    column-gap: 20px;
+    align-items: end;
+  }
+  .hero-eyebrow, .hero-title, .hero-meta { grid-column: 1; }
+  .hero-meta { margin-bottom: 0; }
+  .btn.primary.hero-start {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    align-self: center;
+    width: auto;
+    padding: 18px 28px;
+  }
+}
+
+/* ---------- Home: settings ---------- */
 
 .level-picker {
   display: flex;
@@ -122,63 +379,130 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--secondary);
-  border-radius: 10px;
-  padding: 13px 18px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  padding: 10px 16px 10px 12px;
   cursor: pointer;
   font-weight: 600;
+  font-size: 0.9rem;
 }
 
-.level-chip input { accent-color: var(--primary); width: 20px; height: 20px; }
+.level-chip:has(input:checked) {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.level-chip input { accent-color: var(--primary); width: 18px; height: 18px; margin: 0; }
 
 .mode-picker {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 600px) {
+  .mode-picker { grid-template-columns: 1fr 1fr; }
+}
+
+/* Radio in its own column and the title/description stacked beside it, so
+   a long title ("🛠️ Advanced: Custom Ratio") wraps under itself instead of
+   dropping below the radio on its own line. */
+.mode-chip {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 12px;
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 14px 16px;
+  cursor: pointer;
+  border: 1.5px solid var(--border);
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.mode-chip:hover { border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); }
+
+.mode-chip:has(input:checked), .mode-chip.selected {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.mode-chip input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--muted) 60%, transparent);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.mode-chip input:checked {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 4px var(--surface), inset 0 0 0 10px var(--primary);
+}
+
+.mode-text {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 3px;
+  min-width: 0;
 }
 
-.mode-chip {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 8px;
-  background: var(--secondary);
-  border-radius: 10px;
-  padding: 10px 14px;
-  cursor: pointer;
-  border: 2px solid transparent;
-}
-
-.mode-chip:has(input:checked), .mode-chip.selected { border-color: var(--primary); }
-
-.mode-chip input { accent-color: var(--primary); width: 20px; height: 20px; }
-
-.mode-chip span { font-weight: 600; }
+.mode-text > span { font-weight: 700; font-size: 0.95rem; line-height: 1.3; }
 
 .mode-chip small {
-  flex-basis: 100%;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   line-height: 1.4;
 }
 
-.filter-chip {
-  background: var(--secondary);
-  color: var(--secondary-text);
-  border: none;
+#auto-ratio-hint:not(:empty) {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+#test-minutes-presets { gap: 8px; }
+
+#test-minutes-presets .btn.small {
+  box-shadow: none;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
   border-radius: 999px;
-  padding: 10px 16px;
-  font-size: 0.9rem;
+  padding: 8px 15px;
+}
+
+#test-minutes-presets .btn.small.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-text);
+}
+
+.filter-chip {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 9px 15px;
+  font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
 }
 
-.filter-chip.active { background: var(--primary); color: var(--primary-text); }
+.filter-chip.active { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
 
 .hint {
   color: var(--muted);
-  font-size: 0.85rem;
-  line-height: 1.5;
+  font-size: 0.82rem;
+  line-height: 1.55;
 }
 
 .hint.danger-text { color: var(--danger); }
@@ -193,39 +517,68 @@ body {
 
 .row label {
   min-width: 90px;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   color: var(--muted);
 }
 
 select, input[type="text"], input[type="number"] {
-  background: var(--bg);
+  background: var(--surface-2);
   color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
   padding: 11px 14px;
   font-size: 1rem;
+  font-family: inherit;
+  max-width: 100%;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
+
+/* A label + select row must shrink the select rather than push it past the
+   card's edge (the Review list's sort menu did, by 10px on a phone). */
+.row select { flex: 1 1 160px; min-width: 0; }
+
+#reviewlist-search,
+#progress-search { width: 100%; }
 
 input[type="number"] { width: 100px; }
 
-input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; min-height: 24px; }
-
-.btn {
-  border: none;
-  border-radius: 10px;
-  padding: 14px 22px;
-  font-size: 1rem;
-  font-weight: 600;
+/* Custom slider: a filled track up to the thumb is drawn by the browser's
+   accent-color where supported; this just gives it a thicker, rounder look. */
+input[type="range"] {
+  accent-color: var(--primary);
+  flex: 1;
+  max-width: 260px;
+  min-height: 28px;
   cursor: pointer;
 }
 
-.btn.primary { background: var(--primary); color: var(--primary-text); }
-.btn.secondary { background: var(--secondary); color: var(--secondary-text); }
-.btn.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+.btn {
+  border: none;
+  border-radius: 14px;
+  padding: 14px 22px;
+  font-size: 1rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.btn.primary {
+  background: var(--gradient);
+  color: var(--primary-text);
+  box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--primary) 80%, transparent);
+}
+.btn.secondary {
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1.5px var(--border);
+}
+.btn.danger { background: transparent; color: var(--danger); box-shadow: inset 0 0 0 1.5px var(--danger); }
 
 .actions { margin-top: 16px; }
 
 .center-card { text-align: center; }
+
+/* ---------- Test view ---------- */
 
 .progress-row {
   display: flex;
@@ -239,47 +592,68 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 .progress-bar {
   flex: 1;
   height: 8px;
-  background: var(--secondary);
+  background: var(--surface-2);
   border-radius: 999px;
   overflow: hidden;
 }
 
 .progress-fill {
   height: 100%;
-  background: var(--primary);
+  background: var(--gradient);
   width: 0%;
+  border-radius: 999px;
   transition: width 0.25s ease;
 }
 
 #test-progress-text {
-  font-size: 0.8rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
   color: var(--muted);
   white-space: nowrap;
 }
 
 .level-badge {
   display: inline-block;
-  background: var(--secondary);
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 700;
-  padding: 4px 10px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 5px 12px;
   border-radius: 999px;
-  margin-bottom: 20px;
+  margin: 10px 0 22px;
 }
 
 .play-btn {
+  position: relative;
   display: block;
-  margin: 0 auto 12px auto;
-  width: 88px;
-  height: 88px;
+  margin: 0 auto 14px auto;
+  width: 104px;
+  height: 104px;
   border-radius: 50%;
   border: none;
-  background: var(--primary);
+  background: var(--gradient);
   color: var(--primary-text);
-  font-size: 2rem;
+  font-size: 2.2rem;
   cursor: pointer;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-lift);
+}
+
+/* A slow pulsing ring - "tap me to hear it". */
+.play-btn::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--primary) 45%, transparent);
+  animation: play-pulse 2.2s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes play-pulse {
+  0% { transform: scale(0.92); opacity: 0.9; }
+  100% { transform: scale(1.18); opacity: 0; }
 }
 
 .play-btn:active { transform: scale(0.96); }
@@ -288,24 +662,38 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-top: 16px;
+  margin-top: 18px;
 }
 
 #test-input {
   width: 100%;
-  max-width: 320px;
+  max-width: 360px;
   text-align: center;
-  font-size: 1.4rem;
+  font-size: 1.5rem;
+  font-weight: 600;
   letter-spacing: 1px;
-  padding: 14px;
+  padding: 16px;
+  border-radius: 16px;
+  border-width: 2px;
+  background: var(--surface);
 }
 
+#test-form .actions {
+  width: 100%;
+  max-width: 360px;
+  justify-content: center;
+}
+
+#test-form .actions .btn { flex: 1; }
+
 .feedback {
-  margin-top: 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
   font-size: 1rem;
   font-weight: 600;
+  border-left: 4px solid transparent;
+  text-align: left;
 }
 /* Only the title/badge get the green/red accent color - the box's own
    background tint is enough to read "correct"/"wrong" at a glance. Tinting
@@ -314,12 +702,12 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
    its highlighted "this is the mistake" spans and the plain surrounding
    text were both the same color, so the actual diff was nearly impossible
    to make out against the box's own reddish background. */
-.feedback.correct { background: rgba(47,158,68,0.12); }
-.feedback.wrong { background: rgba(224,49,49,0.08); }
-.feedback .answer-title { line-height: 1.3; font-weight: 700; }
+.feedback.correct { background: color-mix(in srgb, var(--good) 11%, transparent); border-left-color: var(--good); }
+.feedback.wrong { background: color-mix(in srgb, var(--danger) 8%, transparent); border-left-color: var(--danger); }
+.feedback .answer-title { line-height: 1.3; font-weight: 800; }
 .feedback.correct .answer-title { color: var(--good); }
 .feedback.wrong .answer-title { color: var(--danger); }
-.feedback .answer-word { font-size: 1.2rem; margin-top: 2px; color: var(--text); }
+.feedback .answer-word { font-size: 1.25rem; margin-top: 2px; color: var(--text); }
 
 .hidden { display: none !important; }
 
@@ -385,8 +773,8 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 }
 
 .missed-list li {
-  background: var(--secondary);
-  border-radius: 8px;
+  background: var(--surface-2);
+  border-radius: 10px;
   padding: 8px 10px;
   font-size: 0.9rem;
 }
@@ -399,8 +787,8 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 }
 
 .word-chip {
-  background: var(--secondary);
-  border-radius: 8px;
+  background: var(--surface-2);
+  border-radius: 10px;
   overflow: hidden;
 }
 
@@ -409,7 +797,7 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
   text-align: left;
   background: transparent;
   border: none;
-  color: var(--secondary-text);
+  color: var(--text);
   font-size: 0.9rem;
   font-weight: 600;
   padding: 8px 10px;
@@ -424,29 +812,52 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
   color: var(--text);
 }
 
+/* ---------- Progress ---------- */
+
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
   margin-bottom: 12px;
 }
 
 .stat-box {
-  background: var(--secondary);
-  border-radius: 12px;
-  padding: 14px;
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-2);
+  border-radius: 14px;
+  padding: 14px 10px 12px;
   text-align: center;
 }
 
+.stat-box::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--tone, transparent);
+}
+
+.stat-box[data-tone="good"] { --tone: var(--state-memorized); }
+.stat-box[data-tone="warn"] { --tone: var(--state-learning); }
+.stat-box[data-tone="bad"] { --tone: var(--state-incorrect); }
+.stat-box[data-tone="accent"] { --tone: var(--primary); }
+
 .stat-box .num {
-  font-size: 1.6rem;
-  font-weight: 700;
+  font-size: 1.45rem;
+  font-weight: 800;
   display: block;
+  font-variant-numeric: tabular-nums;
+  color: var(--tone, var(--text));
+  letter-spacing: -0.01em;
 }
 
 .stat-box .label {
-  font-size: 0.8rem;
+  font-size: 0.72rem;
+  line-height: 1.3;
   color: var(--muted);
+  display: block;
+  margin-top: 2px;
 }
 
 .level-stat-row {
@@ -458,15 +869,16 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
   justify-content: space-between;
   font-size: 0.85rem;
   color: var(--muted);
-  margin-bottom: 4px;
+  margin-bottom: 5px;
 }
 
 .level-stat-bar {
-  height: 10px;
+  height: 12px;
   border-radius: 999px;
-  background: var(--secondary);
+  background: var(--surface-2);
   overflow: hidden;
   display: flex;
+  gap: 2px;
 }
 
 .level-stat-bar .seg { height: 100%; }
@@ -477,7 +889,7 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 
 .state-badge {
   display: inline-block;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 700;
   padding: 3px 9px;
   border-radius: 999px;
@@ -493,7 +905,7 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
   overflow-x: auto;
   margin-top: 10px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 14px;
 }
 
 .word-table {
@@ -504,7 +916,7 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 }
 
 .word-table th, .word-table td {
-  padding: 8px 12px;
+  padding: 9px 12px;
   text-align: left;
   border-bottom: 1px solid var(--border);
 }
@@ -512,7 +924,7 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 .word-table th {
   color: var(--muted);
   font-weight: 600;
-  background: var(--secondary);
+  background: var(--surface-2);
   position: sticky;
   top: 0;
 }
@@ -523,8 +935,8 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 
 .row-play-btn {
   border: none;
-  background: var(--secondary);
-  color: var(--secondary-text);
+  background: var(--primary-soft);
+  color: var(--primary);
   border-radius: 999px;
   width: 36px;
   height: 36px;
@@ -568,6 +980,8 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
   text-decoration: line-through;
 }
 
+/* ---------- Review list ---------- */
+
 .word-card-list {
   display: flex;
   flex-direction: column;
@@ -576,9 +990,10 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 }
 
 .word-card {
-  background: var(--secondary);
-  border-radius: 10px;
-  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 14px;
 }
 
 /* Word/pos/level (text, wraps naturally if a word is long) and the action
@@ -597,20 +1012,20 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 .word-card-actions {
   display: flex;
   gap: 8px;
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
 .word-card-word {
-  font-weight: 700;
-  font-size: 1.05rem;
+  font-weight: 800;
+  font-size: 1.1rem;
 }
 
 .word-card-level {
   display: inline-block;
-  background: var(--surface);
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 700;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 0.68rem;
+  font-weight: 800;
   padding: 2px 8px;
   border-radius: 999px;
 }
@@ -618,7 +1033,7 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 .card-play-btn, .card-dict-btn, .card-mark-btn {
   border: none;
   background: var(--surface);
-  color: var(--secondary-text);
+  color: var(--text);
   border-radius: 999px;
   width: 40px;
   height: 40px;
@@ -626,6 +1041,7 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
   font-size: 1.05rem;
   cursor: pointer;
   flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .word-card-meta {
@@ -645,12 +1061,12 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 }
 
 .pager-btn {
-  background: var(--secondary);
-  color: var(--secondary-text);
-  border: none;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 10px 16px;
-  font-size: 0.9rem;
+  padding: 9px 16px;
+  font-size: 0.88rem;
   font-weight: 600;
   cursor: pointer;
 }
@@ -660,17 +1076,23 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
   cursor: default;
 }
 
+/* ---------- Footer / update ---------- */
+
 .footer {
+  max-width: 720px;
+  margin: 0 auto;
   text-align: center;
   color: var(--muted);
-  font-size: 0.8rem;
-  padding: 20px 16px;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  padding: 12px 24px 20px;
 }
 
 .btn.small {
   padding: 9px 16px;
   font-size: 0.85rem;
   font-weight: 600;
+  border-radius: 999px;
 }
 
 .update-row {
@@ -775,33 +1197,77 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 }
 
 @media (max-width: 480px) {
-  .play-btn { width: 88px; height: 88px; font-size: 1.9rem; }
+  .card { padding: 20px 18px; }
+  .play-btn { width: 96px; height: 96px; font-size: 2rem; }
   .flashcard-word { font-size: 1.7rem; }
+  .stat-box .num { font-size: 1.25rem; }
 }
 
 /* ---------- Review tab: category / view-mode segmented tabs ---------- */
 
 .segmented {
   display: flex;
-  gap: 8px;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
 }
 
 .segmented-btn {
   flex: 1;
-  background: var(--secondary);
-  color: var(--secondary-text);
-  border: 2px solid transparent;
-  border-radius: 10px;
-  padding: 14px 10px;
-  font-size: 0.95rem;
-  font-weight: 600;
+  min-width: 0;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-radius: 12px;
+  padding: 11px 8px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  font-family: inherit;
   cursor: pointer;
-  white-space: nowrap;
+  line-height: 1.3;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .segmented-btn.active {
-  background: var(--primary);
-  color: var(--primary-text);
+  background: var(--surface);
+  color: var(--primary);
+  box-shadow: 0 1px 3px rgba(22, 24, 39, 0.12);
+}
+
+/* The Review tab's per-category counts, as a number badge on its own line -
+   three "📖 Learning 0"-style labels side by side don't fit a phone. */
+#reviewlist-category-tabs .segmented-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 6px;
+}
+
+#reviewlist-category-tabs .segmented-btn > span:not([id]) {
+  max-width: 100%;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#reviewlist-category-tabs .segmented-btn > span[id$="-count"] {
+  font-size: 1.25rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+#reviewlist-category-tabs .segmented-btn.active > span[id$="-count"] { color: var(--primary); }
+
+#flashcard-launch-panel {
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--border));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--primary) 7%, transparent), transparent 60%),
+    var(--surface);
 }
 
 /* ---------- Review tab: flashcard swipe view ---------- */
@@ -818,10 +1284,13 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 .flashcard {
   width: 100%;
   max-width: 360px;
-  min-height: 260px;
-  background: var(--secondary);
-  border-radius: 16px;
-  padding: 28px 20px;
+  min-height: 280px;
+  background:
+    linear-gradient(160deg, color-mix(in srgb, var(--primary) 9%, transparent), transparent 55%),
+    var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  padding: 30px 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -833,6 +1302,7 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
   -webkit-user-select: none;
   touch-action: pan-y;
   position: relative;
+  box-shadow: var(--shadow);
   transition: transform 0.25s ease, opacity 0.25s ease;
 }
 
@@ -848,10 +1318,10 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
   position: absolute;
   top: 14px;
   left: 14px;
-  background: var(--surface);
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 700;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 0.68rem;
+  font-weight: 800;
   padding: 3px 9px;
   border-radius: 999px;
 }
@@ -869,6 +1339,7 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
   font-size: 1.3rem;
   line-height: 1;
   cursor: pointer;
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .flashcard-mark-btn.marked,
@@ -882,13 +1353,15 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
   border-radius: 50%;
   font-size: 1.7rem;
   margin-bottom: 4px;
-  box-shadow: var(--shadow);
+  background: var(--gradient);
+  color: #fff;
+  box-shadow: var(--shadow-lift);
 }
 
 .flashcard-word {
   font-size: 2rem;
-  font-weight: 700;
-  letter-spacing: 0.5px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
   /* An explicit value here (rather than the browser's own "normal") is what
      lets app.js's fitFlashcardWordText measure a reliable single-line
      height via getComputedStyle - see that function's own comment. */
@@ -944,15 +1417,15 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 }
 
 #level-advanced-fold {
-  margin-top: 20px;
+  margin-top: 18px;
 }
 
 #sync-join-fold summary,
 #level-advanced-fold summary {
   cursor: pointer;
   color: var(--primary);
-  font-weight: 600;
-  font-size: 0.9rem;
+  font-weight: 700;
+  font-size: 0.88rem;
   padding: 6px 0;
   list-style: none;
 }
@@ -969,24 +1442,18 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 #sync-join-fold[open] summary::before,
 #level-advanced-fold[open] summary::before { transform: rotate(90deg); }
 
-#level-advanced-fold[open] {
-  background: var(--bg);
-  border-radius: 10px;
-  padding: 4px 12px 12px 12px;
-  margin-top: 8px;
-}
-
+#level-advanced-fold[open],
 #sync-join-fold[open] {
-  background: var(--bg);
-  border-radius: 10px;
-  padding: 4px 12px 12px 12px;
+  background: var(--surface-2);
+  border-radius: 14px;
+  padding: 4px 14px 14px 14px;
   margin-top: 8px;
 }
 
 .sync-created-box {
-  background: rgba(240, 140, 0, 0.08);
+  background: color-mix(in srgb, var(--warn) 9%, transparent);
   border: 1px solid var(--warn);
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 14px 16px;
   margin: 12px 0;
 }
@@ -1003,10 +1470,24 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 
 /* ---------- Word-type ratio sliders (home screen) ---------- */
 
+#ratio-advanced-panel {
+  margin-top: 12px;
+  padding: 12px 14px 2px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+
 .ratio-value {
   display: inline-block;
   min-width: 3ch;
   text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+#rate-value,
+#test-minutes-value {
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1015,7 +1496,9 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(10, 10, 25, 0.5);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1026,9 +1509,9 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 .modal-box {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 14px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
-  padding: 20px;
+  border-radius: 20px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+  padding: 22px;
   width: 100%;
   max-width: 380px;
   max-height: 80vh;
@@ -1050,9 +1533,9 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 /* ---------- General interaction polish ---------- */
 
 .btn {
-  transition: filter 0.15s ease, transform 0.05s ease;
+  transition: filter 0.15s ease, transform 0.05s ease, box-shadow 0.15s ease;
 }
-.btn:hover:not(:disabled) { filter: brightness(1.08); }
+.btn:hover:not(:disabled) { filter: brightness(1.06); }
 .btn:active:not(:disabled) { transform: scale(0.98); }
 .btn:disabled {
   opacity: 0.55;
@@ -1061,7 +1544,7 @@ input[type="range"] { accent-color: var(--primary); flex: 1; max-width: 200px; m
 }
 
 .tab-btn, .filter-chip, .level-chip {
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 a:focus-visible,
@@ -1075,9 +1558,12 @@ summary:focus-visible,
 }
 
 input[type="text"]:focus, input[type="number"]:focus, select:focus {
+  outline: none;
   border-color: var(--primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 16%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration: 0.001ms !important; animation-duration: 0.001ms !important; }
+  .play-btn::after { animation: none; opacity: 0; }
 }

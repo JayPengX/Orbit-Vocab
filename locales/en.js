@@ -85,6 +85,8 @@
   "home.levelCountHint": "{total} words selected ({breakdown})",
   "home.levelCountNone": "Please select at least one level",
   "home.startTestBtn": "📝 Start Test",
+  "home.heroEyebrow": "Today's practice",
+  "home.heroTitle": "Listen, then spell the word",
   "home.autoRatioHint": "Current mix: {parts}",
   "home.ratioPartNew": "New {pct}%",
   "home.ratioPartIncorrect": "Incorrect {pct}%",

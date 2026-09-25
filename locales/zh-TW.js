@@ -75,6 +75,8 @@
   "home.levelCountHint": "已選 {total} 個單字（{breakdown}）",
   "home.levelCountNone": "請至少選擇一個等級",
   "home.startTestBtn": "📝 開始測驗",
+  "home.heroEyebrow": "今日練習",
+  "home.heroTitle": "聽發音，拼出單字",
   "home.autoRatioHint": "目前配比：{parts}",
   "home.ratioPartNew": "新字 {pct}%",
   "home.ratioPartIncorrect": "答錯 {pct}%",

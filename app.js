@@ -164,6 +164,38 @@ function applySettingsToUI() {
     document.getElementById(`ratio-${key}-value`).textContent = `${value}%`;
   });
   applyModeToUI();
+  updateHomeSummary();
+}
+
+// The home screen's top "start" card repeats the round's current setup
+// (length, speed, levels) so it can sit above the settings it summarizes -
+// and the duration preset matching the current length stays highlighted.
+function updateHomeSummary() {
+  document.querySelectorAll("#test-minutes-presets button[data-minutes]").forEach((btn) => {
+    const active = Number(btn.dataset.minutes) === settings.testMinutes;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  const metaEl = document.getElementById("hero-meta");
+  if (!metaEl) return;
+  const levels = selectedLevels();
+  const contiguous = levels.length > 1 && levels[levels.length - 1] - levels[0] === levels.length - 1;
+  const levelText = contiguous
+    ? `Level ${levels[0]}–${levels[levels.length - 1]}`
+    : `Level ${levels.join(I18n.t("common.listSeparator"))}`;
+  const parts = [
+    `⏱ ${I18n.t("home.minutesValue", { minutes: settings.testMinutes })}`,
+    `🔊 ${settings.rate.toFixed(1)}x`,
+    `📚 ${levelText}`,
+  ];
+  metaEl.replaceChildren(
+    ...parts.map((text) => {
+      const chip = document.createElement("span");
+      chip.className = "hero-chip";
+      chip.textContent = text;
+      return chip;
+    })
+  );
 }
 
 // Reflects settings.mode onto the four mode-chip radios (and their
@@ -946,11 +978,13 @@ document.getElementById("level-picker").addEventListener("change", (e) => {
   }
   updateLevelHint();
   updateAutoRatioHint();
+  updateHomeSummary();
 });
 
 document.getElementById("rate-select").addEventListener("input", (e) => {
   settings.rate = Number(e.target.value);
   document.getElementById("rate-value").textContent = `${settings.rate.toFixed(1)}x`;
+  updateHomeSummary();
   saveSettings();
 });
 
@@ -969,6 +1003,7 @@ function setTestMinutes(minutes) {
   settings.testMinutes = clamped;
   document.getElementById("test-minutes").value = String(clamped);
   document.getElementById("test-minutes-value").textContent = I18n.t("home.minutesValue", { minutes: clamped });
+  updateHomeSummary();
   saveSettings();
 }
 
@@ -2523,12 +2558,12 @@ function renderProgress() {
   document.getElementById("progress-grid").innerHTML = `
     <div class="stat-box"><span class="num">${summary.totalWords}</span><span class="label">${I18n.t("progress.statTotalWords")}</span></div>
     <div class="stat-box"><span class="num">${summary.totalEncountered}</span><span class="label">${I18n.t("progress.statAttempted")}</span></div>
-    <div class="stat-box"><span class="num">${summary.counts.memorized}</span><span class="label">${I18n.t("progress.statMemorized")}</span></div>
-    <div class="stat-box"><span class="num">${summary.counts.learning}</span><span class="label">${I18n.t("progress.statLearning")}</span></div>
-    <div class="stat-box"><span class="num">${summary.counts.incorrect}</span><span class="label">${I18n.t("progress.statIncorrect")}</span></div>
-    <div class="stat-box"><span class="num">${formatPercent(summary.overallAccuracy)}</span><span class="label">${I18n.t("progress.statOverallAccuracy")}</span></div>
-    <div class="stat-box"><span class="num">${formatPercent(summary.memorizationRate)}</span><span class="label">${I18n.t("progress.statMemorizationRate")}</span></div>
-    <div class="stat-box"><span class="num">${formatPercent(summary.recentAccuracy)}</span><span class="label">${I18n.t("progress.statRecentAccuracy")}</span></div>
+    <div class="stat-box" data-tone="good"><span class="num">${summary.counts.memorized}</span><span class="label">${I18n.t("progress.statMemorized")}</span></div>
+    <div class="stat-box" data-tone="warn"><span class="num">${summary.counts.learning}</span><span class="label">${I18n.t("progress.statLearning")}</span></div>
+    <div class="stat-box" data-tone="bad"><span class="num">${summary.counts.incorrect}</span><span class="label">${I18n.t("progress.statIncorrect")}</span></div>
+    <div class="stat-box" data-tone="accent"><span class="num">${formatPercent(summary.overallAccuracy)}</span><span class="label">${I18n.t("progress.statOverallAccuracy")}</span></div>
+    <div class="stat-box" data-tone="accent"><span class="num">${formatPercent(summary.memorizationRate)}</span><span class="label">${I18n.t("progress.statMemorizationRate")}</span></div>
+    <div class="stat-box" data-tone="accent"><span class="num">${formatPercent(summary.recentAccuracy)}</span><span class="label">${I18n.t("progress.statRecentAccuracy")}</span></div>
     <div class="stat-box"><span class="num">${formatMs(summary.globalAverageResponseMs)}</span><span class="label">${I18n.t("progress.statAvgResponseTime")}</span></div>
   `;
 
