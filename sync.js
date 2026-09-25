@@ -3,7 +3,7 @@
 // ---- sync.js ----
 // Optional cross-device sync for this app's learning progress (the
 // progressStore app.js already keeps in localStorage). Reuses the shared
-// Cloudflare Worker (see the separate jaypengx-collab/shared-proxy repo's
+// Cloudflare Worker (see the separate JayPengX/shared-proxy repo's
 // worker.js, its `/vocab-sync` path) as shared server-side infrastructure -
 // this app has no server of its own, and piggybacking on an already-
 // deployed Worker means its owner doesn't need a second Firebase project or

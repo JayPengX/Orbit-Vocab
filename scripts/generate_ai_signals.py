@@ -51,7 +51,7 @@ VOCAB_PATH = ROOT / "data" / "vocab.json"
 SIGNALS_PATH = ROOT / "data" / "ai_signals.json"
 
 API_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-# NOT gemini-3.6-flash: the sibling jaypengx-collab/shared-proxy repo's
+# NOT gemini-3.6-flash: the sibling JayPengX/shared-proxy repo's
 # worker.js live-tested that model against its own schema-constrained
 # (responseSchema) requests and found it misbehaves specifically under that
 # combination - a single request burned 24576 output tokens over 94 seconds

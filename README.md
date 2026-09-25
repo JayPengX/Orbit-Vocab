@@ -2,7 +2,7 @@
 
 A front-end-only high-school English vocabulary dictation and spaced-review trainer.
 
-> **Try it now — Live site: [jaypengx-collab.github.io/Orbit-Vocab](https://jaypengx-collab.github.io/Orbit-Vocab/)**
+> **Try it now — Live site: [jaypengx.github.io/Orbit-Vocab](https://jaypengx.github.io/Orbit-Vocab/)**
 > No install, no login, no server required. Add it to your home screen for a native-app-like, installable, offline-capable experience (see [Install to Home Screen & Offline Use](#install-to-home-screen--offline-use-pwa)).
 
 ## Table of Contents
@@ -219,9 +219,9 @@ local `localStorage` throughout, nothing is lost while sync is temporarily unava
 
 **Security posture**: this feature has no dedicated backend of its own. It reuses the
 Cloudflare Worker already deployed by the standalone
-[jaypengx-collab/shared-proxy](https://github.com/jaypengx-collab/shared-proxy) repo (see
+[JayPengX/shared-proxy](https://github.com/JayPengX/shared-proxy) repo (see
 that repo's `worker.js`, the `/vocab-sync` route — the same Worker also serves the sibling
-[Orbit](https://github.com/jaypengx-collab/Orbit) project's own schedule sync) as a shared
+[Orbit](https://github.com/JayPengX/Orbit) project's own schedule sync) as a shared
 server-side proxy, storing into a separate Firestore collection that doesn't touch Orbit's
 own data. Unlike Orbit's schedule sync, there is no "admin / receive-only" role split and no
 separate, less-sensitive code meant for public sharing here — a single sync passcode always
@@ -291,7 +291,7 @@ never set up for sync are unaffected by this restriction and import normally.
 (the `PROXY_URL` GitHub Actions repository variable is left blank), the sync panel shows
 "Cross-device sync is not configured yet," with no effect on any other local functionality.
 Deployer setup steps: deploy the Worker following the
-[jaypengx-collab/shared-proxy](https://github.com/jaypengx-collab/shared-proxy) repo's
+[JayPengX/shared-proxy](https://github.com/JayPengX/shared-proxy) repo's
 README (full steps for the Firebase project, service account key, etc. are documented
 there), copy the Worker's URL (**without a path suffix** — `/vocab-sync` is appended by
 `sync.js` itself; the configured value should be just the Worker's base URL), and set it in
@@ -304,7 +304,7 @@ time.
 ## AI Mnemonic Generation
 
 An optional feature that, like cross-device sync, reuses the Cloudflare Worker already
-deployed in [jaypengx-collab/shared-proxy](https://github.com/jaypengx-collab/shared-proxy)
+deployed in [JayPengX/shared-proxy](https://github.com/JayPengX/shared-proxy)
 (see that repo's `worker.js`, the `/vocab-ai` route). It requires no Firebase project of its
 own and no additional secrets — as long as `PROXY_URL` is already configured for
 [Cross-Device Sync](#cross-device-sync), this feature becomes available automatically (when
@@ -480,7 +480,7 @@ pipeline.)
 
 ### Online use
 
-Just open the [live site](https://jaypengx-collab.github.io/Orbit-Vocab/) — no login, no
+Just open the [live site](https://jaypengx.github.io/Orbit-Vocab/) — no login, no
 installation required. Chrome, Edge, or Safari are recommended for the most natural-sounding
 speech.
 
@@ -519,13 +519,13 @@ automatically builds and deploys the site to GitHub Pages (requires setting the 
 
 ## Related Projects
 
-- [jaypengx-collab/Shared-Proxy](https://github.com/jaypengx-collab/Shared-Proxy) — the
+- [JayPengX/Shared-Proxy](https://github.com/JayPengX/Shared-Proxy) — the
   shared Cloudflare Worker backend that powers cross-device sync and AI mnemonic generation
   for this project.
-- [jaypengx-collab/Orbit](https://github.com/jaypengx-collab/Orbit) and
-  [jaypengx-collab/Match-Find](https://github.com/jaypengx-collab/Match-Find) — sibling
+- [JayPengX/Orbit](https://github.com/JayPengX/Orbit) and
+  [JayPengX/Match-Find](https://github.com/JayPengX/Match-Find) — sibling
   sites that share the same Worker infrastructure.
 
 ---
 
-**Live site: [jaypengx-collab.github.io/Orbit-Vocab](https://jaypengx-collab.github.io/Orbit-Vocab/)**
+**Live site: [jaypengx.github.io/Orbit-Vocab](https://jaypengx.github.io/Orbit-Vocab/)**
