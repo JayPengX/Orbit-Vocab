@@ -195,14 +195,21 @@ body:has(#view-flashcard.active) .tab-btn[data-view="reviewlist"] {
 @media (max-width: 719px) {
   body { padding-bottom: calc(var(--nav-h) + 28px + env(safe-area-inset-bottom, 0px)); }
 
-  /* A backdrop-filter makes the header the containing block for its fixed
-     children, which would pin the bottom bar to the header instead of the
-     screen - so the phone header is solid instead of frosted. */
+  /* No header on a phone: the installed app's own icon/title already says
+     what this is, so the screen starts straight at the content. The
+     .topbar element itself stays (its .tabs child is the bottom bar) but
+     takes no space - and has no backdrop-filter, which would otherwise make
+     it the containing block for that fixed bar. */
   .topbar {
-    background: var(--surface);
+    position: static;
+    padding: 0;
+    border: none;
+    background: none;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
+  .brand { display: none; }
+  #app { padding-top: calc(16px + env(safe-area-inset-top, 0px)); }
 
   .tabs {
     position: fixed;
