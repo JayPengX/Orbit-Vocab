@@ -825,6 +825,8 @@ function startSyncLoopIfConfigured() {
 // against (see window.VocabState.applySyncedSnapshot in app.js).
 function onVocabReady() {
   vocabReady = true;
+  const loading = document.getElementById("loading");
+  if (loading) loading.hidden = true;
   absorbInbox().finally(startSyncLoopIfConfigured);
 }
 

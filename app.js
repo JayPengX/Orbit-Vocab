@@ -2991,6 +2991,8 @@ init().catch((err) => {
 });
 
 function showInitErrorBanner(message) {
+  const loading = document.getElementById("loading");
+  if (loading) loading.hidden = true;
   const banner = document.createElement("div");
   banner.id = "init-error-banner";
   banner.setAttribute("role", "alert");

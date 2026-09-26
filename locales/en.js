@@ -18,7 +18,7 @@
 (function (root) {
   var strings = {
   // ---- App shell / tabs ----
-  "app.title": "YingDanLi",
+  "app.title": "Quadra Words",
   "app.subtitle": "High School English Vocabulary Level 4–6",
   "app.loadFailed": "The app failed to load. Please check your network connection and refresh the page.",
   "app.vocabLoadFailed": "Couldn't load vocabulary data. Please check your network connection and refresh the page.",

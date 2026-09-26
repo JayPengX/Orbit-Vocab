@@ -1,14 +1,31 @@
 {
-  "name": "英單力",
-  "short_name": "英單力",
+  "name": "四方單字 Quadra Words",
+  "short_name": "四方單字",
   "description": "高中英文參考詞彙表 Level 4–6 單字測驗與複習工具",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f5f6fa",
-  "theme_color": "#5655e8",
+  "theme_color": "#be185d",
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
-  ]
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "id": "/Orbit-Vocab/"
 }

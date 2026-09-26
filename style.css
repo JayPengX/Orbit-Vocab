@@ -1576,7 +1576,7 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus {
 }
 
 /* ---- Quadra Words: study rewards and the Quadra Pass ---- */
-.quadra-words { margin: 12px 0 16px; padding: 14px; border-radius: 16px; background: var(--quadra-soft, rgba(219, 39, 119, 0.07)); border: 1px solid rgba(219, 39, 119, 0.18); }
+.quadra-words { margin: 12px 0 16px; padding: 14px; border-radius: 16px; background: rgba(86, 85, 232, 0.07); border: 1px solid rgba(86, 85, 232, 0.2); }
 .quadra-words-title { margin: 0 0 6px; font-size: 1rem; }
 .quadra-words-lede { margin: 0 0 10px; line-height: 1.55; }
 .quadra-words-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 8px; }

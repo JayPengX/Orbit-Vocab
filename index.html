@@ -7,43 +7,54 @@
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-<meta name="apple-mobile-web-app-title" content="英單力" />
-<meta name="application-name" content="英單力" />
-<meta name="description" content="英單力——高中英文參考詞彙表 Level 4–6 單字聽寫測驗與複習工具，內建 3,060 個單字的發音與中文意思。" />
-<title>英單力｜高中英文單字測驗 Level 4–6</title>
+<meta name="apple-mobile-web-app-title" content="四方單字" />
+<meta name="application-name" content="四方單字" />
+<meta name="description" content="四方單字——高中英文參考詞彙表 Level 4–6 單字聽寫測驗與複習工具，內建 3,060 個單字的發音與中文意思。" />
+<title>四方單字｜高中英文單字測驗 Level 4–6</title>
 <link rel="manifest" href="manifest.json" />
+<link rel="icon" href="favicon.svg?v=__BUILD_VERSION__" type="image/svg+xml" />
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png?v=__BUILD_VERSION__" />
 <link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png?v=__BUILD_VERSION__" />
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png?v=__BUILD_VERSION__" />
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="英單力 YingDanLi">
-<meta property="og:title" content="英單力 YingDanLi｜高中英文單字聽寫測驗">
+<meta property="og:site_name" content="四方單字 Quadra Words">
+<meta property="og:title" content="四方單字 Quadra Words｜高中英文單字聽寫測驗">
 <meta property="og:description" content="聽發音、拼單字，系統依你的反應時間與答錯紀錄自動排出該複習的字。Level 4–6 共 3,060 字，免安裝、免登入，可加到主畫面離線使用。">
 <meta property="og:url" content="https://jaypengx.github.io/Orbit-Vocab/">
 <meta property="og:image" content="https://jaypengx.github.io/Orbit-Vocab/assets/og-card.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="英單力 YingDanLi">
+<meta property="og:image:alt" content="四方單字 Quadra Words">
 <meta property="og:image" content="https://jaypengx.github.io/Orbit-Vocab/assets/og-card-square.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="1200">
-<meta property="og:image:alt" content="英單力 YingDanLi">
+<meta property="og:image:alt" content="四方單字 Quadra Words">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="英單力 YingDanLi｜高中英文單字聽寫測驗">
+<meta name="twitter:title" content="四方單字 Quadra Words｜高中英文單字聽寫測驗">
 <meta name="twitter:description" content="聽發音、拼單字，系統依你的反應時間與答錯紀錄自動排出該複習的字。Level 4–6 共 3,060 字，免安裝、免登入，可加到主畫面離線使用。">
 <meta name="twitter:image" content="https://jaypengx.github.io/Orbit-Vocab/assets/og-card.jpg">
-<meta name="twitter:image:alt" content="英單力 YingDanLi">
+<meta name="twitter:image:alt" content="四方單字 Quadra Words">
 <link rel="stylesheet" href="style.css?v=__BUILD_VERSION__" />
 <link rel="stylesheet" href="quadra.css?v=__BUILD_VERSION__" />
 <meta name="build-version" content="__BUILD_VERSION__" />
 </head>
 <body>
+<!-- Quadra's shared loading screen, until the word list is in (sync.js's onVocabReady). -->
+<div id="loading" class="loading" role="status" aria-live="polite">
+  <div class="loading-box">
+    <img class="loading-logo" src="favicon.svg?v=__BUILD_VERSION__" alt="" width="72" height="72" />
+    <p class="loading-brand">四方 QUADRA</p>
+    <p class="loading-title">四方單字</p>
+    <div class="spinner" aria-hidden="true"></div>
+  </div>
+</div>
+<script>setTimeout(function () { var l = document.getElementById("loading"); if (l) l.hidden = true; }, 8000);</script>
 <header class="topbar">
   <div class="brand">
     <span class="brand-mark" aria-hidden="true">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="34" height="34"> <defs> <linearGradient id="orbitvocab-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#5b21b6"/></linearGradient> <radialGradient id="orbitvocab-hl" cx="0.25" cy="0.18" r="0.8"><stop offset="0" stop-color="#fff" stop-opacity="0.32"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient> <radialGradient id="orbitvocab-disc" cx="0.38" cy="0.32" r="0.75"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e9ecf5"/></radialGradient> </defs> <rect width="512" height="512" rx="116" fill="url(#orbitvocab-bg)"/> <rect width="512" height="512" rx="116" fill="url(#orbitvocab-hl)"/> <g transform="translate(256 256) scale(0.92) translate(-256 -256)"> <path d="M -222 0 A 222 150 0 0 1 222 0" transform="translate(256 256) rotate(-24)" fill="none" stroke="#fff" stroke-opacity="0.5" stroke-width="14"/> <circle cx="256" cy="256" r="128" fill="url(#orbitvocab-disc)"/>  <path d="M186 336 L240 178 L294 336" stroke="#5b21b6" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" fill="none"/> <path d="M206 282 H274" stroke="#5b21b6" stroke-width="22" stroke-linecap="round"/> <path d="M318 212 Q346 256 318 300" stroke="#5b21b6" stroke-width="18" stroke-linecap="round" fill="none"/> <path d="M 222 0 A 222 150 0 0 1 -222 0" transform="translate(256 256) rotate(-24)" fill="none" stroke="#fff" stroke-width="14" stroke-linecap="round"/> <circle cx="0" cy="0" r="26" fill="#fff" transform="translate(256 256) rotate(-24) translate(189 -78)"/> </g> </svg>
     </span>
-    <h1><span class="brand-name" data-i18n="app.title">英單力</span><span class="brand-sub" data-i18n="app.subtitle">高中英文單字 Level 4–6</span></h1>
+    <h1><span class="brand-name" data-i18n="app.title">四方單字</span><span class="brand-sub" data-i18n="app.subtitle">高中英文單字 Level 4–6</span></h1>
   </div>
   <nav class="tabs" id="tabs">
     <button class="tab-btn active" data-view="home" data-i18n="tabs.home">首頁</button>

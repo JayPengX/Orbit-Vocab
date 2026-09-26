@@ -9,7 +9,7 @@
 (function (root) {
   var strings = {
   // ---- App shell / tabs ----
-  "app.title": "英單力",
+  "app.title": "四方單字",
   "app.subtitle": "高中英文單字 Level 4–6",
   "app.loadFailed": "應用程式載入失敗，請確認網路連線後重新整理頁面。",
   "app.vocabLoadFailed": "無法載入單字資料，請確認網路連線後重新整理頁面。",
