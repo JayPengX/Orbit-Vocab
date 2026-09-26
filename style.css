@@ -1574,3 +1574,13 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus {
   * { transition-duration: 0.001ms !important; animation-duration: 0.001ms !important; }
   .play-btn::after { animation: none; opacity: 0; }
 }
+
+/* ---- Quadra Words: study rewards and the Quadra Pass ---- */
+.quadra-words { margin: 12px 0 16px; padding: 14px; border-radius: 16px; background: var(--quadra-soft, rgba(219, 39, 119, 0.07)); border: 1px solid rgba(219, 39, 119, 0.18); }
+.quadra-words-title { margin: 0 0 6px; font-size: 1rem; }
+.quadra-words-lede { margin: 0 0 10px; line-height: 1.55; }
+.quadra-words-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 8px; }
+.quadra-words-stats > div { display: grid; gap: 2px; padding: 8px 10px; border-radius: 12px; background: var(--card-bg, #fff); min-width: 0; }
+.quadra-words-stats small { opacity: 0.7; }
+.quadra-words-stats strong { overflow-wrap: anywhere; }
+.quadra-words .quadra-apps { margin-top: 10px; }

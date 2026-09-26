@@ -34,6 +34,8 @@
 <meta name="twitter:image" content="https://jaypengx.github.io/Orbit-Vocab/assets/og-card.jpg">
 <meta name="twitter:image:alt" content="英單力 YingDanLi">
 <link rel="stylesheet" href="style.css?v=__BUILD_VERSION__" />
+<link rel="stylesheet" href="quadra.css?v=__BUILD_VERSION__" />
+<meta name="build-version" content="__BUILD_VERSION__" />
 </head>
 <body>
 <header class="topbar">
@@ -324,6 +326,8 @@
       <h2 data-i18n="progress.syncTitle">🔄 跨裝置同步</h2>
       <p class="hint" data-i18n="progress.syncIntro">把學習紀錄同步到你的其他裝置。先按「建立新同步」，再到其他裝置輸入密碼「加入同步」。</p>
 
+      <div id="quadra-words" class="quadra-words"></div>
+
       <div id="sync-setup-box">
         <div class="row actions">
           <button class="btn primary" id="sync-create-btn" data-i18n="progress.syncCreateBtn">🔗 建立新同步</button>
@@ -425,6 +429,7 @@
 <script src="logic.js?v=__BUILD_VERSION__"></script>
 <script src="app.js?v=__BUILD_VERSION__"></script>
 <script src="sync.js?v=__BUILD_VERSION__"></script>
+<script type="module" src="quadra-words.mjs?v=__BUILD_VERSION__"></script>
 <script src="vocab-ai.js?v=__BUILD_VERSION__"></script>
 <script>
   (function () {

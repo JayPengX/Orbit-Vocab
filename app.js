@@ -321,6 +321,7 @@ function recordResult(item, correct, responseMs, answer) {
   }
   const history = progressStore[key];
   const priorAvg = history.avgCorrectResponseMs;
+  const stateBefore = history.attempts ? Logic.classifyState(history) : "new";
   Logic.recordAttempt(history, {
     correct: correct,
     responseMs: responseMs,
@@ -331,6 +332,8 @@ function recordResult(item, correct, responseMs, answer) {
     pos: item.pos,
   });
   saveProgress();
+  // Quadra Words' study rewards (see quadra-words.mjs).
+  if (window.QuadraWords) window.QuadraWords.onAnswer(item.word, correct, stateBefore, Logic.classifyState(history));
   answersSinceForcedSync += 1;
   if (answersSinceForcedSync >= FORCE_SYNC_EVERY_N_ANSWERS) {
     answersSinceForcedSync = 0;
@@ -1510,6 +1513,7 @@ function advanceTest() {
 
 function finishTest() {
   vocabTest.inProgress = false;
+  if (window.QuadraWords) window.QuadraWords.flush();
   stopRoundTimer();
   document.getElementById("test-progress-fill").style.width = "100%";
   document.getElementById("test-form").classList.add("hidden");

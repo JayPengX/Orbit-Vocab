@@ -26,7 +26,10 @@ jobs:
       - name: Stamp cache-busting version
         run: |
           VER="${GITHUB_SHA::8}"
-          sed -i "s/__BUILD_VERSION__/$VER/g" index.html app.js sw.js
+          sed -i "s/__BUILD_VERSION__/$VER/g" index.html app.js sw.js quadra-words.mjs
+          # The version the running app compares against (quadra.mjs's
+          # watchUpdates): a newer one here means a newer deploy is out.
+          echo "{\"version\":\"$VER\"}" > version.json
       - name: Stamp proxy Worker URL
         # PROXY_URL is a plain repository *variable* (Settings -> Secrets
         # and variables -> Actions -> Variables), not a Secret - it ends up

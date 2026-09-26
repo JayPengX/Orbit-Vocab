@@ -45,6 +45,21 @@ const VOCAB_SYNC_PROXY_URL =
 // Both this pairing's identifier and its only credential - see the
 // file-level comment above on why there's no separate "code" any more.
 const PASSCODE_KEY = "vocab_sync_passcode";
+
+// The Quadra Pass (四方通行碼): one 10-character code for all four Quadra
+// apps (see quadra.mjs), kept by the Worker's /eco route. New syncs are
+// passes only; an old 16-character passcode keeps working (through
+// /vocab-sync) until it's upgraded. On a pass, this app's progress is the
+// same payload as before, stored beside the pass's shared wallet.
+const QUADRA_PASS_PATTERN = /^[2-9A-HJ-NP-Z]{10}$/;
+const ECO_PROXY_URL = PROXY_URL && !PROXY_URL.startsWith("__") ? `${PROXY_URL.replace(/\/+$/, "")}/eco` : "";
+function isQuadraPass(code) {
+  return QUADRA_PASS_PATTERN.test(String(code || ""));
+}
+// What people type: lower case, spaces and dashes are fine.
+function cleanTypedCode(text) {
+  return String(text || "").toUpperCase().replace(/[\s-]/g, "");
+}
 const LAST_UPDATE_KEY = "vocab_sync_last_update";
 // Left over from the earlier two-secret (code + passcode) pairing design -
 // cleared opportunistically below (see clearSyncPairing) so a device that
@@ -105,7 +120,8 @@ function isSyncProxyConfigured() {
   return !!VOCAB_SYNC_PROXY_URL && !VOCAB_SYNC_PROXY_URL.startsWith("__");
 }
 function getSyncPasscode() {
-  return readLocal(PASSCODE_KEY).trim();
+  // A pass entered in another Quadra app on this browser counts here too.
+  return readLocal(PASSCODE_KEY).trim() || (isQuadraPass(readLocal("quadra.pass")) ? readLocal("quadra.pass") : "");
 }
 function isSyncConfigured() {
   return !!getSyncPasscode();
@@ -113,8 +129,10 @@ function isSyncConfigured() {
 function setSyncPairing(passcode) {
   writeLocal(PASSCODE_KEY, String(passcode || "").trim());
   writeLocal(LAST_UPDATE_KEY, "");
+  if (isQuadraPass(passcode)) writeLocal("quadra.pass", passcode);
 }
 function clearSyncPairing() {
+  if (isQuadraPass(readLocal(PASSCODE_KEY)) || isQuadraPass(readLocal("quadra.pass"))) writeLocal("quadra.pass", "");
   writeLocal(PASSCODE_KEY, "");
   writeLocal(LAST_UPDATE_KEY, "");
   writeLocal(LEGACY_CODE_KEY, "");
@@ -409,6 +427,7 @@ function clearRateLimitBackoff() {
 // The passcode is the only thing every request needs to identify itself by
 // now - see the file-level comment on why there's no separate code param.
 function proxyUrl(passcode) {
+  if (isQuadraPass(passcode)) return `${ECO_PROXY_URL}?${new URLSearchParams({ passcode: passcode, app: "vocab" }).toString()}`;
   return `${VOCAB_SYNC_PROXY_URL}?${new URLSearchParams({ passcode: passcode }).toString()}`;
 }
 async function proxyErrorMessage(response) {
@@ -434,10 +453,11 @@ async function fetchSyncDoc(passcode) {
 
 async function createSyncDoc(payload) {
   try {
-    const response = await fetch(VOCAB_SYNC_PROXY_URL, {
+    // New syncs are Quadra Passes.
+    const response = await fetch(`${ECO_PROXY_URL}?app=vocab`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ payload: payload }),
+      body: JSON.stringify({ op: "create", payload: payload }),
     });
     if (!response.ok) return { ok: false, error: await proxyErrorMessage(response) };
     clearRateLimitBackoff();
@@ -805,7 +825,68 @@ function startSyncLoopIfConfigured() {
 // against (see window.VocabState.applySyncedSnapshot in app.js).
 function onVocabReady() {
   vocabReady = true;
-  startSyncLoopIfConfigured();
+  absorbInbox().finally(startSyncLoopIfConfigured);
+}
+
+/* ---------- Quadra Pass: merged accounts and upgrading ---------- */
+
+// Progress from other accounts that the Quadra merge tool moved to this
+// pass waits in its inbox; each is folded in word by word (the copy with
+// more attempts at a word wins), then pushed, then removed from the inbox.
+async function absorbInbox() {
+  const passcode = getSyncPasscode();
+  if (!isQuadraPass(passcode) || !ECO_PROXY_URL || !navigator.onLine) return;
+  try {
+    const response = await fetch(`${proxyUrl(passcode)}&inbox=1`);
+    if (!response.ok) return;
+    const data = await response.json();
+    if (!data.inbox || !data.inbox.length) return;
+    const merged = Object.assign({}, window.VocabState.getProgress());
+    for (const item of data.inbox) {
+      const remote = await decodeSyncPayload(item.payload).catch(() => null);
+      if (remote && remote.progress) {
+        const progress = expandSyncedProgress(remote.progress, remote.exportedAt);
+        for (const [key, h] of Object.entries(progress)) {
+          const mine = merged[key];
+          if (!mine || (h && (h.attempts || 0) > (mine.attempts || 0))) merged[key] = h;
+        }
+      }
+    }
+    window.VocabState.applySyncedSnapshot(merged, null);
+    dirty = true;
+    const pushed = await pushSnapshot();
+    if (pushed.ok) for (const item of data.inbox) await fetch(`${proxyUrl(passcode)}&inbox=${encodeURIComponent(item.id)}`, { method: "DELETE" }).catch(() => {});
+  } catch (e) {
+    /* tried again next time the app opens */
+  }
+}
+
+// An old 16-character passcode moved to a new Quadra Pass (the old one is
+// deleted by the Worker once its progress is safely there).
+async function upgradeToPass(extraSources) {
+  const passcode = getSyncPasscode();
+  const sources = [];
+  if (passcode && !isQuadraPass(passcode)) sources.push({ app: "vocab", passcode: passcode });
+  for (const src of extraSources || []) sources.push(src);
+  if (!sources.length || !ECO_PROXY_URL) return { ok: false };
+  if (dirty) await pushSnapshot();
+  try {
+    const response = await fetch(ECO_PROXY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ op: "merge", sources: sources, passcode: isQuadraPass(passcode) ? passcode : undefined }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return { ok: false, error: (data.error && data.error.message) || `HTTP ${response.status}` };
+    setSyncPairing(data.passcode);
+    hasSyncedSinceLoad = false;
+    await absorbInbox();
+    renderSyncPanel();
+    startSyncLoopIfConfigured();
+    return { ok: true, passcode: data.passcode };
+  } catch (error) {
+    return { ok: false, error: error.message || String(error) };
+  }
 }
 
 document.addEventListener("visibilitychange", () => {
@@ -958,7 +1039,7 @@ function vocabSyncJoin() {
     return;
   }
   const passcodeInput = document.getElementById("sync-join-passcode");
-  const passcode = (passcodeInput?.value || "").trim();
+  const passcode = cleanTypedCode(passcodeInput?.value || "");
   if (!passcode) {
     setSyncStatus(I18n.t("sync.enterPasscode"), true);
     return;
@@ -975,13 +1056,18 @@ function vocabSyncJoin() {
       setSyncStatus(I18n.t("sync.passcodeNotFound"), true);
       return;
     }
-    const confirmed = await window.VocabUI.confirm(I18n.t("sync.joinConfirm"));
+    // A Quadra Pass not used here yet: this device's progress becomes its
+    // progress (nothing to replace, so nothing to confirm).
+    const keepLocal = isQuadraPass(passcode) && !doc.payload;
+    const confirmed = keepLocal || (await window.VocabUI.confirm(I18n.t("sync.joinConfirm")));
     if (!confirmed) {
       setSyncStatus("");
       return;
     }
     writeLocal(BACKUP_BEFORE_JOIN_KEY, JSON.stringify(buildSyncSnapshotData()));
-    if (doc.payload) {
+    if (keepLocal) {
+      // Pushed by the loop's first tick below.
+    } else if (doc.payload) {
       const remote = await decodeSyncPayload(doc.payload);
       const remoteProgress = expandSyncedProgress(remote.progress, remote.exportedAt);
       window.VocabState.applySyncedSnapshot(remoteProgress, remote.settings);
@@ -990,7 +1076,7 @@ function vocabSyncJoin() {
     }
     setSyncPairing(passcode);
     writeLocal(LAST_UPDATE_KEY, doc.updateTime);
-    dirty = false;
+    dirty = keepLocal;
     // This join just fetched-and-applied the server's current data, which
     // IS reconciling with it - the first automatic tick afterward doesn't
     // need to force another pull first (see hasSyncedSinceLoad).
@@ -1239,4 +1325,8 @@ window.VocabSync = {
   reconcileBeforeStarting: reconcileBeforeStarting,
   isSyncConfigured: isSyncConfigured,
   wouldRegressProgress: wouldRegressLocalProgress,
+  getPasscode: getSyncPasscode,
+  isQuadraPass: isQuadraPass,
+  upgradeToPass: upgradeToPass,
+  proxyBase: () => (PROXY_URL && !PROXY_URL.startsWith("__") ? PROXY_URL.replace(/\/+$/, "") : ""),
 };

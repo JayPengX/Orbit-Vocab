@@ -37,6 +37,9 @@ const APP_SHELL = [
   "logic.js",
   "app.js",
   "sync.js",
+  "quadra.mjs",
+  "quadra-words.mjs",
+  "quadra.css",
   "manifest.json",
   "data/vocab.json",
   "icons/icon-192.png",
@@ -79,6 +82,9 @@ self.addEventListener("fetch", (event) => {
   // Never intercept cross-origin requests (the sync proxy, Web Speech
   // fallback voices, etc.) - this cache is for this app's own assets only.
   if (url.origin !== self.location.origin) return;
+  // The deploy's version (quadra.mjs's watchUpdates) must always come from
+  // the network, never from this cache.
+  if (url.pathname.endsWith("/version.json")) return;
 
   const isNavigation = request.mode === "navigate" || request.destination === "document";
   event.respondWith(isNavigation ? networkFirst(request) : cacheFirst(request));
