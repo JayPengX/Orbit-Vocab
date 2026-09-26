@@ -42,7 +42,7 @@ function save() {
 function seedMastered() {
   if (rewards.seeded) return;
   const progress = window.VocabState?.getProgress?.() || {};
-  for (const [key, h] of Object.entries(progress)) if (window.Logic?.classifyState?.(h) === 'memorized') rewards.mastered[key] = 1;
+  for (const [key, h] of Object.entries(progress)) if (window.VocabLogic?.classifyState?.(h) === 'memorized') rewards.mastered[key] = 1;
   rewards.seeded = true;
   save();
 }
